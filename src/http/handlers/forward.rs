@@ -1,4 +1,4 @@
-use crate::http::utils::{aws_helper::sign_request, memory_or_file_buffer::MemoryOrFileBuffer};
+use crate::http::utils::{memory_or_file_buffer::MemoryOrFileBuffer, s3_helper::sign_request};
 
 use super::*;
 use actix_web::body::SizedStream;
@@ -41,7 +41,7 @@ pub async fn forward(
         .timeout(UPLOAD_TIMEOUT);
 
     if let Some(length) = content_length(req.headers()) {
-        if config.aws_config.is_some() {
+        if config.s3_config.is_some() {
             log::info!(
                 "Adding x-amz-meta-original-content-length header with length {}",
                 length
@@ -69,7 +69,7 @@ pub async fn forward(
 
     let mut input_etag: Option<String> = None;
 
-    let res_e = if let Some(aws_config) = config.aws_config.clone() {
+    let res_e = if let Some(s3_config) = config.s3_config.clone() {
         let filepath = config.local_encryption_path_for(&req).unwrap();
         let mut buffer = MemoryOrFileBuffer::new(filepath);
 
@@ -82,7 +82,7 @@ pub async fn forward(
 
         let stream_to_send = buffer.as_stream().await;
 
-        sign_request(forwarded_req, aws_config)
+        sign_request(forwarded_req, s3_config)
             .send_body(SizedStream::new(length, stream_to_send))
             .await
     } else {

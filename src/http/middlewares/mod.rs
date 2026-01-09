@@ -59,7 +59,7 @@ pub async fn ensure_write_once(
     result
 }
 
-pub async fn verify_aws_signature(
+pub async fn verify_s3_signature(
     service_request: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
@@ -69,14 +69,14 @@ pub async fn verify_aws_signature(
 
     let config = service_request.app_data::<web::Data<HttpConfig>>().unwrap();
 
-    if let Some(config) = config.aws_config.clone() {
+    if let Some(config) = config.s3_config.clone() {
         if !config.bypass_signature_check && !is_signature_valid(service_request.request(), config)
         {
             log::warn!(
-                "Invalid AWS signature for request: {}",
+                "Invalid S3 signature for request: {}",
                 service_request.uri()
             );
-            return Err(ErrorUnauthorized("Invalid AWS signature"));
+            return Err(ErrorUnauthorized("Invalid S3 signature"));
         }
     }
 

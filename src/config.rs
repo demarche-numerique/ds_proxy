@@ -1,4 +1,4 @@
-use super::aws_config::AwsConfig;
+use super::s3_config::S3Config;
 use super::{args, keyring::Keyring, keyring_utils::load_keyring};
 use crate::redis_config::RedisConfig;
 use actix_web::HttpRequest;
@@ -43,7 +43,7 @@ pub struct HttpConfig {
     pub chunk_size: usize,
     pub address: SocketAddr,
     pub local_encryption_directory: PathBuf,
-    pub aws_config: Option<AwsConfig>,
+    pub s3_config: Option<S3Config>,
     pub backend_connection_timeout: Duration,
     pub write_once: bool,
     pub redis_config: RedisConfig,
@@ -195,21 +195,21 @@ impl Config {
                 backend_connection_timeout
             );
 
-            let aws_config = if let (Some(aws_access_key), Some(aws_secret_key), Some(region)) = (
-                &args.flag_aws_access_key,
-                &args.flag_aws_secret_key,
-                &args.flag_aws_region,
+            let s3_config = if let (Some(s3_access_key), Some(s3_secret_key), Some(region)) = (
+                &args.flag_s3_access_key,
+                &args.flag_s3_secret_key,
+                &args.flag_s3_region,
             ) {
-                let config = AwsConfig::new(
+                let config = S3Config::new(
                     Credentials::new(
-                        aws_access_key,
-                        aws_secret_key,
+                        s3_access_key,
+                        s3_secret_key,
                         None,
                         None,
                         "cli-credentials",
                     ),
                     region.to_string(),
-                    args.flag_bypass_aws_signature_check,
+                    args.flag_bypass_s3_signature_check,
                 );
                 Some(config)
             } else {
@@ -222,7 +222,7 @@ impl Config {
                 upstream_base_url,
                 address,
                 local_encryption_directory,
-                aws_config,
+                s3_config,
                 backend_connection_timeout,
                 write_once,
                 redis_config: RedisConfig::create_redis_config(args),
@@ -451,7 +451,7 @@ mod tests {
             upstream_base_url: normalize_and_parse_upstream_url(upstream_base_url.to_string()),
             address: "127.0.0.1:1234".to_socket_addrs().unwrap().next().unwrap(),
             local_encryption_directory: PathBuf::from(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY),
-            aws_config: None,
+            s3_config: None,
             backend_connection_timeout: Duration::from_secs(1),
             write_once: false,
             redis_config: RedisConfig::default(),

@@ -8,15 +8,15 @@ use aws_sigv4::http_request::{
 use aws_sigv4::sign::v4::SigningParams;
 
 #[derive(Debug, Clone)]
-pub struct AwsConfig {
+pub struct S3Config {
     pub bypass_signature_check: bool,
     credentials: Credentials,
     region: String,
 }
 
-impl AwsConfig {
+impl S3Config {
     pub fn new(credentials: Credentials, region: String, bypass_signature_check: bool) -> Self {
-        AwsConfig {
+        S3Config {
             bypass_signature_check,
             credentials,
             region,

@@ -3,9 +3,9 @@ use aws_sigv4::http_request::{SignableBody, SignableRequest};
 use std::time::SystemTime;
 use url::Url;
 
-use crate::aws_config::AwsConfig;
+use crate::s3_config::S3Config;
 
-const AWS_SIGNATURE_RELATED_KEYS: [&str; 18] = [
+const S3_SIGNATURE_RELATED_KEYS: [&str; 18] = [
     "awsaccesskeyid",
     "signature",
     "expires",
@@ -26,19 +26,19 @@ const AWS_SIGNATURE_RELATED_KEYS: [&str; 18] = [
     "x-amz-signature",
 ];
 
-pub fn sign_request(req: ClientRequest, aws_config: AwsConfig) -> ClientRequest {
-    sign_request_with_time(req, aws_config, SystemTime::now())
+pub fn sign_request(req: ClientRequest, s3_config: S3Config) -> ClientRequest {
+    sign_request_with_time(req, s3_config, SystemTime::now())
 }
 
 fn sign_request_with_time(
     mut req: ClientRequest,
-    aws_config: AwsConfig,
+    s3_config: S3Config,
     time: SystemTime,
 ) -> ClientRequest {
     let url = Url::parse(&req.get_uri().to_string()).unwrap();
-    req = req.uri(remove_aws_signature_params(url));
+    req = req.uri(remove_s3_signature_params(url));
 
-    for key in AWS_SIGNATURE_RELATED_KEYS.iter() {
+    for key in S3_SIGNATURE_RELATED_KEYS.iter() {
         req.headers_mut().remove(*key);
     }
 
@@ -54,7 +54,7 @@ fn sign_request_with_time(
         .insert_header(("x-amz-content-sha256", "UNSIGNED-PAYLOAD"))
         .insert_header(("host", host));
 
-    let aws_headers = req
+    let s3_headers = req
         .headers()
         .iter()
         .filter(|(k, _)| k.as_str().to_lowercase().starts_with("x-amz"))
@@ -63,12 +63,12 @@ fn sign_request_with_time(
     let signable_request = SignableRequest::new(
         req.get_method().as_str(),
         req.get_uri().to_string(),
-        aws_headers,
+        s3_headers,
         SignableBody::UnsignedPayload,
     )
     .unwrap();
 
-    let (signing_instructions, _signature) = aws_config.sign(time, signable_request, None);
+    let (signing_instructions, _signature) = s3_config.sign(time, signable_request, None);
 
     for (name, value) in signing_instructions.headers() {
         req = req.insert_header((name, value));
@@ -79,13 +79,13 @@ fn sign_request_with_time(
     req
 }
 
-pub fn remove_aws_signature_params(url: Url) -> String {
+pub fn remove_s3_signature_params(url: Url) -> String {
     let mut cleaned_url = url.clone();
     cleaned_url.set_query(None);
 
     let kept_pairs = url
         .query_pairs()
-        .filter(|(k, _)| !AWS_SIGNATURE_RELATED_KEYS.contains(&k.as_ref().to_lowercase().as_str()));
+        .filter(|(k, _)| !S3_SIGNATURE_RELATED_KEYS.contains(&k.as_ref().to_lowercase().as_str()));
     for (k, v) in kept_pairs {
         cleaned_url.query_pairs_mut().append_pair(&k, &v);
     }
@@ -99,8 +99,8 @@ mod tests {
     use aws_sdk_s3::config::Credentials;
     use chrono::{DateTime, NaiveDateTime, Utc};
 
-    fn config() -> AwsConfig {
-        AwsConfig::new(
+    fn config() -> S3Config {
+        S3Config::new(
             Credentials::new("an_access_key", "a_secret_key", None, None, "test"),
             "eu-west-1".to_string(),
             true,
@@ -108,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_request_removes_interfering_aws_params() {
+    fn test_sign_request_removes_interfering_s3_params() {
         let uri = "https://s3-eu-west-1.amazonaws.com/plop?q=p&X-Amz-Algorithm=AWS4-HMAC-SHA256&AWSAccessKeyId=an_access_key&Signature=5Vo1RnSRALE3f9K8CJFOIOBAPbQ%3D&x-amz-acl=private&Expires=1764714247";
         let request = awc::Client::new()
             .get(uri)

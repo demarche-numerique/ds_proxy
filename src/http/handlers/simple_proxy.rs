@@ -1,6 +1,6 @@
 use actix_http::Method;
 
-use crate::http::utils::aws_helper::sign_request;
+use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
 
@@ -22,8 +22,8 @@ pub async fn simple_proxy(
         proxied_req.headers_mut().remove(header);
     }
 
-    let req_to_send = if let Some(aws_config) = config.aws_config.clone() {
-        sign_request(proxied_req, aws_config)
+    let req_to_send = if let Some(s3_config) = config.s3_config.clone() {
+        sign_request(proxied_req, s3_config)
     } else {
         proxied_req
     };

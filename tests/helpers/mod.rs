@@ -50,9 +50,9 @@ impl ProxyAndNode {
         latency: Option<Duration>,
         log: PrintServerLogs,
         keyring_path: Option<&str>,
-        enable_aws_signature_check: bool,
+        enable_s3_signature_check: bool,
     ) -> ProxyAndNode {
-        let proxy = launch_proxy(log, keyring_path, enable_aws_signature_check);
+        let proxy = launch_proxy(log, keyring_path, enable_s3_signature_check);
         let node = launch_node_with_latency(latency, log);
         let redis = launch_redis(log);
         thread::sleep(time::Duration::from_secs(4));
@@ -81,7 +81,7 @@ pub fn launch_redis(log: PrintServerLogs) -> ChildGuard {
 pub fn launch_proxy(
     log: PrintServerLogs,
     keyring_path: Option<&str>,
-    enable_aws_signature_check: bool,
+    enable_s3_signature_check: bool,
 ) -> ChildGuard {
     let keyring = if let Some(file) = keyring_path {
         file
@@ -94,16 +94,16 @@ pub fn launch_proxy(
         .arg("proxy")
         .arg("--address=localhost:4444")
         .arg("--upstream-url=http://localhost:3333/jail/cell")
-        .arg("--aws-access-key=key")
-        .arg("--aws-secret-key=secret")
-        .arg("--aws-region=region")
+        .arg("--s3-access-key=key")
+        .arg("--s3-secret-key=secret")
+        .arg("--s3-region=region")
         .env("DS_KEYRING", keyring)
         .env("DS_PASSWORD", PASSWORD)
         .env("DS_SALT", SALT)
         .env("DS_CHUNK_SIZE", CHUNK_SIZE.to_string());
 
-    if !enable_aws_signature_check {
-        command.arg("--bypass-aws-signature-check");
+    if !enable_s3_signature_check {
+        command.arg("--bypass-s3-signature-check");
     }
 
     match log {
