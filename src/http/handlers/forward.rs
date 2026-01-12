@@ -2,7 +2,11 @@ use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
 use actix_web::body::SizedStream;
+use data_encoding::HEXLOWER;
 use futures::StreamExt;
+use md5::{digest::DynDigest, Digest, Md5};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Duration;
 
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
@@ -63,8 +67,16 @@ pub async fn forward(
         .get_last_key()
         .expect("no key avalaible for encryption");
 
-    let convert_payload = payload.map(|item| item.map_err(|e| Error::from(e)));
-    let encrypted_stream = Encoder::<Error>::new(key, key_id, config.chunk_size, Box::new(convert_payload));
+    let convert_payload = payload.map(|item| item.map_err(Error::from));
+    let md5_hasher: Rc<RefCell<Box<dyn DynDigest>>> = Rc::new(RefCell::new(Box::new(Md5::new())));
+    let hasher_clone = Rc::clone(&md5_hasher);
+    let encrypted_stream = Encoder::<Error>::new(
+        key,
+        key_id,
+        config.chunk_size,
+        Box::new(convert_payload),
+        Some(hasher_clone),
+    );
 
     let final_req = if let Some(s3_config) = config.s3_config.clone() {
         sign_request(forwarded_req, s3_config)
@@ -101,9 +113,13 @@ pub async fn forward(
         client_resp.append_header(header);
     }
 
-    // let etag = encrypted_stream.input_md5();
+    let etag = {
+        let hasher_guard = md5_hasher.borrow();
+        let hash_result = hasher_guard.clone().finalize();
+        HEXLOWER.encode(&hash_result[..])
+    };
 
-    // client_resp.insert_header(("etag", format!("\"{}\"", etag)));
+    client_resp.insert_header(("etag", format!("\"{}\"", etag)));
 
     Ok(client_resp.body(res.body().await?))
 }

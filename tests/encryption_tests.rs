@@ -33,7 +33,7 @@ fn encoding_then_decoding_returns_source_data() {
 
         let (key_id, key) = keyring.get_last_key().unwrap();
 
-        let encoder = Encoder::new(key, key_id, chunk_size, Box::new(source_stream));
+        let encoder = Encoder::new(key, key_id, chunk_size, Box::new(source_stream), None);
 
         let mut boxy: Box<dyn futures::Stream<Item = Result<Bytes, _>> + Unpin> = Box::new(encoder);
 
