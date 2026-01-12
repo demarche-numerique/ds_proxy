@@ -7,7 +7,7 @@ DS encryption proxy.
 Usage:
   ds_proxy encrypt <input-file> <output-file> [--password-file=<password-file>] [--salt=<salt>] [--chunk-size=<chunk-size>] [--keyring-file=<keyring-file>]
   ds_proxy decrypt <input-file> <output-file> [--password-file=<password-file>] [--salt=<salt>] [--chunk-size=<chunk-size>] [--keyring-file=<keyring-file>]
-  ds_proxy proxy [--address=<address>] [--verify-ssl-certificate=<verify-ssl-certificate>] [--password-file=<password-file>] [--salt=<salt>] [--chunk-size=<chunk-size>] [--upstream-url=<upstream-url>] [--local-encryption-directory=<local-encryption-directory>] [--write-once] [--keyring-file=<keyring-file>] [--s3-access-key=<s3-access-key>] [--s3-secret-key=<s3-secret-key>] [--s3-region=<s3-region>] [--bypass-s3-signature-check] [--backend-connection-timeout=<backend-connection-timeout>] [--redis-url=<redis-url>] [--redis-timeout-wait=<redis-timeout-wait>] [--redis-timeout-create=<redis-timeout-create>] [--redis-timeout-recycle=<redis-timeout-recycle>] [--redis-pool-max-size=<redis-pool-max-size>]
+  ds_proxy proxy [--address=<address>] [--bypass-ssl-certificate-check] [--password-file=<password-file>] [--salt=<salt>] [--chunk-size=<chunk-size>] [--upstream-url=<upstream-url>] [--local-encryption-directory=<local-encryption-directory>] [--write-once] [--keyring-file=<keyring-file>] [--s3-access-key=<s3-access-key>] [--s3-secret-key=<s3-secret-key>] [--s3-region=<s3-region>] [--bypass-s3-signature-check] [--backend-connection-timeout=<backend-connection-timeout>] [--redis-url=<redis-url>] [--redis-timeout-wait=<redis-timeout-wait>] [--redis-timeout-create=<redis-timeout-create>] [--redis-timeout-recycle=<redis-timeout-recycle>] [--redis-pool-max-size=<redis-pool-max-size>]
   ds_proxy add-key [--password-file=<password-file>] [--salt=<salt>] [--keyring-file=<keyring-file>]
   ds_proxy (-h | --help)
   ds_proxy --version
@@ -43,5 +43,5 @@ pub struct Args {
     pub flag_redis_timeout_create: Option<u64>,
     pub flag_redis_timeout_recycle: Option<u64>,
     pub flag_redis_pool_max_size: Option<usize>,
-    pub flag_verify_ssl_certificate: Option<String>,
+    pub flag_bypass_ssl_certificate_check: bool,
 }

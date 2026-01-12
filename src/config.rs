@@ -47,7 +47,7 @@ pub struct HttpConfig {
     pub backend_connection_timeout: Duration,
     pub write_once: bool,
     pub redis_config: RedisConfig,
-    pub verify_ssl_certificate: bool,
+    pub bypass_ssl_certificate_check: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -178,17 +178,17 @@ impl Config {
                 }
             };
 
-            let verify_ssl_certificate = match &args.flag_verify_ssl_certificate {
-                Some(verify_ssl_certificate) => verify_ssl_certificate.parse().unwrap(),
-                None => match env::var("VERIFY_SSL_CERTIFICATE") {
-                    Ok(verify_ssl_certificate_string) => verify_ssl_certificate_string
+            let bypass_ssl_certificate_check = match &args.flag_bypass_ssl_certificate_check {
+                true => true,
+                false => match env::var("BYPASS_SSL_CERTIFICATE_CHECK") {
+                    Ok(bypass_ssl_certificate_string) => bypass_ssl_certificate_string
                         .parse()
-                        .expect("VERIFY_SSL_CERTIFICATE is not a boolean"),
-                    _ => true,
+                        .expect("BYPASS_SSL_CERTIFICATE_CHECK is not a boolean"),
+                    _ => false,
                 },
             };
 
-            log::info!("verify_ssl_certificate: {:?}", verify_ssl_certificate);
+            log::info!("bypass_ssl_certificate_check: {:?}", bypass_ssl_certificate_check);
 
             log::info!(
                 "backend_connection_timeout: {:?}",
@@ -226,7 +226,7 @@ impl Config {
                 backend_connection_timeout,
                 write_once,
                 redis_config: RedisConfig::create_redis_config(args),
-                verify_ssl_certificate,
+                bypass_ssl_certificate_check,
             })
         }
     }
@@ -455,7 +455,7 @@ mod tests {
             backend_connection_timeout: Duration::from_secs(1),
             write_once: false,
             redis_config: RedisConfig::default(),
-            verify_ssl_certificate: true,
+            bypass_ssl_certificate_check: true,
         }
     }
 }
