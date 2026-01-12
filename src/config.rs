@@ -170,10 +170,15 @@ impl Config {
                 &args.flag_s3_secret_key,
                 &args.flag_s3_region,
             ) {
+                let bypass_signature_check = bool_from(
+                    args.flag_bypass_s3_signature_check,
+                    "BYPASS_S3_SIGNATURE_CHECK",
+                );
+
                 let config = S3Config::new(
                     Credentials::new(s3_access_key, s3_secret_key, None, None, "cli-credentials"),
                     region.to_string(),
-                    args.flag_bypass_s3_signature_check,
+                    bypass_signature_check,
                 );
                 Some(config)
             } else {
