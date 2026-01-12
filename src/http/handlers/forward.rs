@@ -1,4 +1,4 @@
-use crate::http::utils::{memory_or_file_buffer::MemoryOrFileBuffer, s3_helper::sign_request};
+use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
 use actix_web::body::SizedStream;
@@ -63,43 +63,21 @@ pub async fn forward(
         .get_last_key()
         .expect("no key avalaible for encryption");
 
-    let mut encrypted_stream = Encoder::new(key, key_id, config.chunk_size, Box::new(payload));
+    let convert_payload = payload.map(|item| item.map_err(|e| Error::from(e)));
+    let encrypted_stream = Encoder::<Error>::new(key, key_id, config.chunk_size, Box::new(convert_payload));
 
-    let cloned_req = req.clone();
-
-    let mut input_etag: Option<String> = None;
-
-    let res_e = if let Some(s3_config) = config.s3_config.clone() {
-        let filepath = config.local_encryption_path_for(&req).unwrap();
-        let mut buffer = MemoryOrFileBuffer::new(filepath);
-
-        while let Ok(Some(v)) = encrypted_stream.try_next().await {
-            buffer.append(v).await;
-        }
-
-        let (_output_sha256, length) = buffer.sha256_and_len();
-        input_etag = Some(encrypted_stream.input_md5());
-
-        let stream_to_send = buffer.as_stream().await;
-
+    let final_req = if let Some(s3_config) = config.s3_config.clone() {
         sign_request(forwarded_req, s3_config)
-            .send_body(SizedStream::new(length, stream_to_send))
+    } else {
+        forwarded_req
+    };
+
+    let res_e = if let Some(length) = forward_length {
+        final_req
+            .send_body(SizedStream::new(length as u64, encrypted_stream))
             .await
     } else {
-        let stream_to_send = encrypted_stream
-            .map_err(move |e| {
-                error!("forward error with stream {:?}, {:?}", e, cloned_req);
-                Error::from(e)
-            })
-            .boxed_local();
-
-        if let Some(length) = forward_length {
-            forwarded_req
-                .send_body(SizedStream::new(length as u64, stream_to_send))
-                .await
-        } else {
-            forwarded_req.send_stream(stream_to_send).await
-        }
+        final_req.send_stream(encrypted_stream).await
     };
 
     let mut res = res_e.map_err(|e| {
@@ -123,9 +101,9 @@ pub async fn forward(
         client_resp.append_header(header);
     }
 
-    if let Some(etag) = input_etag {
-        client_resp.insert_header(("etag", format!("\"{}\"", etag)));
-    }
+    // let etag = encrypted_stream.input_md5();
+
+    // client_resp.insert_header(("etag", format!("\"{}\"", etag)));
 
     Ok(client_resp.body(res.body().await?))
 }
