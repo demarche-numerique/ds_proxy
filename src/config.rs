@@ -1,4 +1,4 @@
-use super::aws_config::AwsConfig;
+use super::s3_config::S3Config;
 use super::{args, keyring::Keyring, keyring_utils::load_keyring};
 use crate::redis_config::RedisConfig;
 use actix_web::HttpRequest;
@@ -43,11 +43,11 @@ pub struct HttpConfig {
     pub chunk_size: usize,
     pub address: SocketAddr,
     pub local_encryption_directory: PathBuf,
-    pub aws_config: Option<AwsConfig>,
+    pub s3_config: Option<S3Config>,
     pub backend_connection_timeout: Duration,
     pub write_once: bool,
     pub redis_config: RedisConfig,
-    pub verify_ssl_certificate: bool,
+    pub bypass_ssl_certificate_check: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -65,18 +65,8 @@ impl Config {
                 .expect("Missing password, use DS_PASSWORD env or --password-file cli argument"),
         };
 
-        let salt = match &args.flag_salt {
-            Some(salt) => salt.to_string(),
-            None => {
-                env::var("DS_SALT").expect("Missing salt, use DS_SALT env or --salt cli argument")
-            }
-        };
-
-        let keyring_file: String = match &args.flag_keyring_file {
-            Some(keyring_file) => keyring_file.to_string(),
-            None => env::var("DS_KEYRING")
-                .expect("Missing keyring, use DS_KEYRING env or --keyring-file cli argument"),
-        };
+        let salt = string_from(&args.flag_salt, "DS_SALT");
+        let keyring_file = string_from(&args.flag_keyring_file, "DS_KEYRING");
 
         if args.cmd_add_key {
             return Config::AddKeyConfig(AddKeyConfig {
@@ -130,14 +120,7 @@ impl Config {
                 )
             });
 
-            let raw_upstream_base_url = match &args.flag_upstream_url {
-                Some(upstream_url) => Some(upstream_url.to_string()),
-                None => Some(env::var("DS_UPSTREAM_URL").expect(
-                    "Missing upstream_url, use DS_UPSTREAM_URL env or --upstream-url cli argument",
-                )),
-            }
-            .unwrap();
-
+            let raw_upstream_base_url = string_from(&args.flag_upstream_url, "DS_UPSTREAM_URL");
             let upstream_base_url = normalize_and_parse_upstream_url(raw_upstream_base_url);
 
             let address = match &args.flag_address {
@@ -166,50 +149,36 @@ impl Config {
                     _ => Duration::from_secs(1),
                 },
             };
-
-            let write_once = if args.flag_write_once {
-                true
-            } else {
-                match env::var("WRITE_ONCE") {
-                    Ok(write_once_string) => write_once_string
-                        .parse()
-                        .expect("WRITE_ONCE is not a boolean"),
-                    _ => false,
-                }
-            };
-
-            let verify_ssl_certificate = match &args.flag_verify_ssl_certificate {
-                Some(verify_ssl_certificate) => verify_ssl_certificate.parse().unwrap(),
-                None => match env::var("VERIFY_SSL_CERTIFICATE") {
-                    Ok(verify_ssl_certificate_string) => verify_ssl_certificate_string
-                        .parse()
-                        .expect("VERIFY_SSL_CERTIFICATE is not a boolean"),
-                    _ => true,
-                },
-            };
-
-            log::info!("verify_ssl_certificate: {:?}", verify_ssl_certificate);
-
             log::info!(
                 "backend_connection_timeout: {:?}",
                 backend_connection_timeout
             );
 
-            let aws_config = if let (Some(aws_access_key), Some(aws_secret_key), Some(region)) = (
-                &args.flag_aws_access_key,
-                &args.flag_aws_secret_key,
-                &args.flag_aws_region,
+            let write_once = bool_from(args.flag_write_once, "WRITE_ONCE");
+
+            let bypass_ssl_certificate_check = bool_from(
+                args.flag_bypass_ssl_certificate_check,
+                "BYPASS_SSL_CERTIFICATE_CHECK",
+            );
+            log::info!(
+                "bypass_ssl_certificate_check: {:?}",
+                bypass_ssl_certificate_check
+            );
+
+            let s3_config = if let (Some(s3_access_key), Some(s3_secret_key), Some(region)) = (
+                &args.flag_s3_access_key,
+                &args.flag_s3_secret_key,
+                &args.flag_s3_region,
             ) {
-                let config = AwsConfig::new(
-                    Credentials::new(
-                        aws_access_key,
-                        aws_secret_key,
-                        None,
-                        None,
-                        "cli-credentials",
-                    ),
+                let bypass_signature_check = bool_from(
+                    args.flag_bypass_s3_signature_check,
+                    "BYPASS_S3_SIGNATURE_CHECK",
+                );
+
+                let config = S3Config::new(
+                    Credentials::new(s3_access_key, s3_secret_key, None, None, "cli-credentials"),
                     region.to_string(),
-                    args.flag_bypass_aws_signature_check,
+                    bypass_signature_check,
                 );
                 Some(config)
             } else {
@@ -222,13 +191,34 @@ impl Config {
                 upstream_base_url,
                 address,
                 local_encryption_directory,
-                aws_config,
+                s3_config,
                 backend_connection_timeout,
                 write_once,
                 redis_config: RedisConfig::create_redis_config(args),
-                verify_ssl_certificate,
+                bypass_ssl_certificate_check,
             })
         }
+    }
+}
+
+fn bool_from(flag: bool, env_var: &str) -> bool {
+    if flag {
+        true
+    } else {
+        match env::var(env_var) {
+            Ok(var_string) => var_string
+                .parse()
+                .unwrap_or_else(|_| panic!("{} is not a boolean", env_var)),
+            _ => false,
+        }
+    }
+}
+
+fn string_from(flag: &Option<String>, env_var: &str) -> String {
+    if let Some(value) = flag {
+        value.to_string()
+    } else {
+        env::var(env_var).unwrap_or_else(|_| panic!("Missing {}, use env or cli argument", env_var))
     }
 }
 
@@ -451,11 +441,11 @@ mod tests {
             upstream_base_url: normalize_and_parse_upstream_url(upstream_base_url.to_string()),
             address: "127.0.0.1:1234".to_socket_addrs().unwrap().next().unwrap(),
             local_encryption_directory: PathBuf::from(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY),
-            aws_config: None,
+            s3_config: None,
             backend_connection_timeout: Duration::from_secs(1),
             write_once: false,
             redis_config: RedisConfig::default(),
-            verify_ssl_certificate: true,
+            bypass_ssl_certificate_check: true,
         }
     }
 }

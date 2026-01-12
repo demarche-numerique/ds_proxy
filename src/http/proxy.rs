@@ -28,7 +28,7 @@ pub async fn main(config: HttpConfig) -> std::io::Result<()> {
 
     HttpServer::new(move || {
         let mut awc_connector = awc::Connector::new().timeout(config.backend_connection_timeout); // max time to connect to remote host including dns name resolution
-        if !config.verify_ssl_certificate {
+        if config.bypass_ssl_certificate_check {
             let mut ssl_builder = SslConnector::builder(SslMethod::tls()).unwrap();
             ssl_builder.set_verify(SslVerifyMode::NONE);
             let ssl_connector = ssl_builder.build();
@@ -58,7 +58,7 @@ pub async fn main(config: HttpConfig) -> std::io::Result<()> {
                 }
                 .service(resource("{name}*").to(simple_proxy));
 
-                scope.wrap(from_fn(verify_aws_signature))
+                scope.wrap(from_fn(verify_s3_signature))
             })
             .service(
                 scope("/local")

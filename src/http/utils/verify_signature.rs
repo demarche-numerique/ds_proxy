@@ -5,16 +5,16 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::aws_config::AwsConfig;
-use crate::http::utils::aws_helper::remove_aws_signature_params;
+use crate::http::utils::s3_helper::remove_s3_signature_params;
+use crate::s3_config::S3Config;
 
-pub fn is_signature_valid(request: &HttpRequest, aws_config: AwsConfig) -> bool {
-    is_signature_valid_with_date(request, aws_config, Utc::now())
+pub fn is_signature_valid(request: &HttpRequest, s3_config: S3Config) -> bool {
+    is_signature_valid_with_date(request, s3_config, Utc::now())
 }
 
 fn is_signature_valid_with_date(
     request: &HttpRequest,
-    aws_config: AwsConfig,
+    s3_config: S3Config,
     now: DateTime<Utc>,
 ) -> bool {
     log::info!("Verifying signature for request: {:?}", &request);
@@ -29,11 +29,11 @@ fn is_signature_valid_with_date(
         }
     };
     let expires_in = extract_expires_in(&all_params);
-    let aws_date = extract_aws_date(&all_params);
+    let s3_date = extract_s3_date(&all_params);
     let signed_pairs = extract_signed_pairs(&all_params);
 
-    if !aws_date_is_valid(now, aws_date, expires_in) {
-        log::warn!("AWS date is invalid or too far in the past/future");
+    if !s3_date_is_valid(now, s3_date, expires_in) {
+        log::warn!("S3 date is invalid or too far in the past/future");
         return false;
     }
 
@@ -43,7 +43,7 @@ fn is_signature_valid_with_date(
         SignableBody::UnsignedPayload
     };
 
-    let url_without_signature = remove_aws_signature_params(request.full_url());
+    let url_without_signature = remove_s3_signature_params(request.full_url());
 
     log::debug!("method: {}", request.method());
     log::debug!("Full URL: {}", request.full_url());
@@ -59,7 +59,7 @@ fn is_signature_valid_with_date(
     )
     .unwrap();
 
-    let (_, expected_signature) = aws_config.sign(aws_date.into(), signable, expires_in);
+    let (_, expected_signature) = s3_config.sign(s3_date.into(), signable, expires_in);
 
     log::debug!("Expected signature: {}", expected_signature);
     log::debug!("Provided signature: {}", provided_signature);
@@ -67,23 +67,23 @@ fn is_signature_valid_with_date(
     expected_signature == provided_signature
 }
 
-fn aws_date_is_valid(
+fn s3_date_is_valid(
     now: DateTime<Utc>,
-    aws_date: DateTime<Utc>,
+    s3_date: DateTime<Utc>,
     expires_in: Option<Duration>,
 ) -> bool {
-    if aws_date + expires_in.unwrap_or_default() < now - Duration::from_mins(15) {
+    if s3_date + expires_in.unwrap_or_default() < now - Duration::from_mins(15) {
         return false;
     }
 
-    if aws_date > now + Duration::from_mins(15) {
+    if s3_date > now + Duration::from_mins(15) {
         return false;
     }
 
     true
 }
 
-fn extract_aws_date(all_params: &HashMap<String, String>) -> DateTime<Utc> {
+fn extract_s3_date(all_params: &HashMap<String, String>) -> DateTime<Utc> {
     let amz_date = all_params.get("x-amz-date").expect("Missing x-amz-date");
     //  it must be in the ISO 8601 basic YYYYMMDD'T'HHMMSS'Z' format. Z stands for UTC time.
     let naive = NaiveDateTime::parse_from_str(amz_date, "%Y%m%dT%H%M%SZ")
@@ -142,11 +142,11 @@ fn extract_signed_pairs(all_params: &HashMap<String, String>) -> Vec<(String, St
         .collect()
 }
 
-fn extract_signature(aws_params: &HashMap<String, String>) -> Option<String> {
-    if presigned_url(aws_params) {
-        aws_params.get("x-amz-signature").map(|s| s.to_string())
+fn extract_signature(s3_params: &HashMap<String, String>) -> Option<String> {
+    if presigned_url(s3_params) {
+        s3_params.get("x-amz-signature").map(|s| s.to_string())
     } else {
-        let authorization = aws_params.get("authorization")?;
+        let authorization = s3_params.get("authorization")?;
 
         authorization
             .split(',')
@@ -171,25 +171,25 @@ mod tests {
     fn date_inside_a_15min_window_is_valid() {
         let now = Utc::now();
 
-        let aws_date = now + chrono::Duration::minutes(10);
-        assert!(aws_date_is_valid(now, aws_date, None));
+        let s3_date = now + chrono::Duration::minutes(10);
+        assert!(s3_date_is_valid(now, s3_date, None));
 
-        let aws_date = now - chrono::Duration::minutes(10);
-        assert!(aws_date_is_valid(now, aws_date, None));
+        let s3_date = now - chrono::Duration::minutes(10);
+        assert!(s3_date_is_valid(now, s3_date, None));
 
-        let aws_date = now + chrono::Duration::minutes(16);
-        assert!(!aws_date_is_valid(now, aws_date, None));
+        let s3_date = now + chrono::Duration::minutes(16);
+        assert!(!s3_date_is_valid(now, s3_date, None));
 
-        let aws_date = now - chrono::Duration::minutes(16);
-        assert!(!aws_date_is_valid(now, aws_date, None));
+        let s3_date = now - chrono::Duration::minutes(16);
+        assert!(!s3_date_is_valid(now, s3_date, None));
 
-        let aws_date = now - chrono::Duration::minutes(16);
+        let s3_date = now - chrono::Duration::minutes(16);
         let expires_in = Some(Duration::from_mins(2));
-        assert!(aws_date_is_valid(now, aws_date, expires_in));
+        assert!(s3_date_is_valid(now, s3_date, expires_in));
     }
 
-    fn config() -> AwsConfig {
-        AwsConfig::new(
+    fn config() -> S3Config {
+        S3Config::new(
             Credentials::new("an_access_key", "a_secret_key", None, None, "test"),
             "eu-west-1".to_string(),
             true,

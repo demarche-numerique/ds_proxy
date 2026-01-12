@@ -1,5 +1,4 @@
 pub mod args;
-pub mod aws_config;
 pub mod config;
 pub mod crypto;
 pub mod file;
@@ -8,4 +7,5 @@ pub mod keyring;
 pub mod keyring_utils;
 pub mod redis_config;
 pub mod redis_utils;
+pub mod s3_config;
 pub mod write_once_service;

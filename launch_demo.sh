@@ -26,13 +26,13 @@ npm clean-install --ignore-scripts --prefix tests/fixtures/server-static
 echo 'building keyring file'
 ./target/release/ds_proxy add-key --password-file <(echo -n "$PASSWORD") --keyring-file "$KEYRING_FILE" --salt "$SALT"
 
-if [ "$1" = "aws" ]; then
-  echo 'launching ds_proxy in aws mode listenning on real s3 backend'
-  RUST_LOG=debug ./target/release/ds_proxy proxy --address "$DS_PROXY_ADDRESS" --password-file <(echo -n "$PASSWORD") --salt "$SALT" --keyring-file "$KEYRING_FILE" --upstream-url "$UPSTREAM_URL" --aws-access-key "$AWS_ACCESS_KEY" --aws-secret-key "$AWS_SECRET_KEY" --aws-region "$AWS_REGION" > "$DS_PROXY_LOG" 2>&1 &
+if [ "$1" = "s3" ]; then
+  echo 'launching ds_proxy in s3 mode listenning on real s3 backend'
+  RUST_LOG=debug ./target/release/ds_proxy proxy --address "$DS_PROXY_ADDRESS" --password-file <(echo -n "$PASSWORD") --salt "$SALT" --keyring-file "$KEYRING_FILE" --upstream-url "$UPSTREAM_URL" --s3-access-key "$S3_ACCESS_KEY" --s3-secret-key "$S3_SECRET_KEY" --s3-region "$S3_REGION" > "$DS_PROXY_LOG" 2>&1 &
 
-elif [ "$1" = "fake_aws" ]; then
-  echo 'launching ds_proxy in aws mode listenning on 4444 binded on node server'
-  RUST_LOG=info ./target/release/ds_proxy proxy --address "$DS_PROXY_ADDRESS" --password-file <(echo -n "$PASSWORD") --salt "$SALT" --keyring-file "$KEYRING_FILE" --upstream-url "http://localhost:3333" --aws-access-key "$AWS_ACCESS_KEY" --aws-secret-key "$AWS_SECRET_KEY" --aws-region "eu-west-1" > "$DS_PROXY_LOG" 2>&1 &
+elif [ "$1" = "fake_s3" ]; then
+  echo 'launching ds_proxy in s3 mode listenning on 4444 binded on node server'
+  RUST_LOG=info ./target/release/ds_proxy proxy --address "$DS_PROXY_ADDRESS" --password-file <(echo -n "$PASSWORD") --salt "$SALT" --keyring-file "$KEYRING_FILE" --upstream-url "http://localhost:3333" --s3-access-key "$S3_ACCESS_KEY" --s3-secret-key "$S3_SECRET_KEY" --s3-region "eu-west-1" > "$DS_PROXY_LOG" 2>&1 &
 
 else
   echo 'launching ds_proxy listenning on 4444 binded on node server, using redis to emulate write once'

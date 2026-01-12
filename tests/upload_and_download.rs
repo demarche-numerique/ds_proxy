@@ -77,7 +77,7 @@ fn upload_and_download() {
 
 #[test]
 #[serial(servers)]
-fn check_aws_signature() {
+fn check_s3_signature() {
     let _proxy_node_and_redis =
         ProxyAndNode::start_with_options(None, PrintServerLogs::No, None, true);
 
@@ -85,6 +85,6 @@ fn check_aws_signature() {
     assert_eq!(put.status.success(), true);
     assert_eq!(
         String::from_utf8_lossy(&put.stdout),
-        "Invalid AWS signature".to_string()
+        "Invalid S3 signature".to_string()
     );
 }

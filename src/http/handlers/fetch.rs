@@ -1,5 +1,5 @@
 use super::*;
-use crate::http::utils::{aws_helper::sign_request, partial_extractor::*};
+use crate::http::utils::{partial_extractor::*, s3_helper::sign_request};
 use actix_files::HttpRange;
 use actix_web::web::Bytes;
 
@@ -30,8 +30,8 @@ pub async fn fetch(
         fetch_req.headers_mut().remove(header);
     }
 
-    let req_to_send = if let Some(aws_config) = config.aws_config.clone() {
-        sign_request(fetch_req, aws_config)
+    let req_to_send = if let Some(s3_config) = config.s3_config.clone() {
+        sign_request(fetch_req, s3_config)
     } else {
         fetch_req
     };
