@@ -65,18 +65,8 @@ impl Config {
                 .expect("Missing password, use DS_PASSWORD env or --password-file cli argument"),
         };
 
-        let salt = match &args.flag_salt {
-            Some(salt) => salt.to_string(),
-            None => {
-                env::var("DS_SALT").expect("Missing salt, use DS_SALT env or --salt cli argument")
-            }
-        };
-
-        let keyring_file: String = match &args.flag_keyring_file {
-            Some(keyring_file) => keyring_file.to_string(),
-            None => env::var("DS_KEYRING")
-                .expect("Missing keyring, use DS_KEYRING env or --keyring-file cli argument"),
-        };
+        let salt = string_from(&args.flag_salt, "DS_SALT");
+        let keyring_file = string_from(&args.flag_keyring_file, "DS_KEYRING");
 
         if args.cmd_add_key {
             return Config::AddKeyConfig(AddKeyConfig {
@@ -130,14 +120,7 @@ impl Config {
                 )
             });
 
-            let raw_upstream_base_url = match &args.flag_upstream_url {
-                Some(upstream_url) => Some(upstream_url.to_string()),
-                None => Some(env::var("DS_UPSTREAM_URL").expect(
-                    "Missing upstream_url, use DS_UPSTREAM_URL env or --upstream-url cli argument",
-                )),
-            }
-            .unwrap();
-
+            let raw_upstream_base_url = string_from(&args.flag_upstream_url, "DS_UPSTREAM_URL");
             let upstream_base_url = normalize_and_parse_upstream_url(raw_upstream_base_url);
 
             let address = match &args.flag_address {
@@ -166,33 +149,20 @@ impl Config {
                     _ => Duration::from_secs(1),
                 },
             };
-
-            let write_once = if args.flag_write_once {
-                true
-            } else {
-                match env::var("WRITE_ONCE") {
-                    Ok(write_once_string) => write_once_string
-                        .parse()
-                        .expect("WRITE_ONCE is not a boolean"),
-                    _ => false,
-                }
-            };
-
-            let bypass_ssl_certificate_check = match &args.flag_bypass_ssl_certificate_check {
-                true => true,
-                false => match env::var("BYPASS_SSL_CERTIFICATE_CHECK") {
-                    Ok(bypass_ssl_certificate_string) => bypass_ssl_certificate_string
-                        .parse()
-                        .expect("BYPASS_SSL_CERTIFICATE_CHECK is not a boolean"),
-                    _ => false,
-                },
-            };
-
-            log::info!("bypass_ssl_certificate_check: {:?}", bypass_ssl_certificate_check);
-
             log::info!(
                 "backend_connection_timeout: {:?}",
                 backend_connection_timeout
+            );
+
+            let write_once = bool_from(args.flag_write_once, "WRITE_ONCE");
+
+            let bypass_ssl_certificate_check = bool_from(
+                args.flag_bypass_ssl_certificate_check,
+                "BYPASS_SSL_CERTIFICATE_CHECK",
+            );
+            log::info!(
+                "bypass_ssl_certificate_check: {:?}",
+                bypass_ssl_certificate_check
             );
 
             let s3_config = if let (Some(s3_access_key), Some(s3_secret_key), Some(region)) = (
@@ -201,13 +171,7 @@ impl Config {
                 &args.flag_s3_region,
             ) {
                 let config = S3Config::new(
-                    Credentials::new(
-                        s3_access_key,
-                        s3_secret_key,
-                        None,
-                        None,
-                        "cli-credentials",
-                    ),
+                    Credentials::new(s3_access_key, s3_secret_key, None, None, "cli-credentials"),
                     region.to_string(),
                     args.flag_bypass_s3_signature_check,
                 );
@@ -229,6 +193,27 @@ impl Config {
                 bypass_ssl_certificate_check,
             })
         }
+    }
+}
+
+fn bool_from(flag: bool, env_var: &str) -> bool {
+    if flag {
+        true
+    } else {
+        match env::var(env_var) {
+            Ok(var_string) => var_string
+                .parse()
+                .unwrap_or_else(|_| panic!("{} is not a boolean", env_var)),
+            _ => false,
+        }
+    }
+}
+
+fn string_from(flag: &Option<String>, env_var: &str) -> String {
+    if let Some(value) = flag {
+        value.to_string()
+    } else {
+        env::var(env_var).unwrap_or_else(|_| panic!("Missing {}, use env or cli argument", env_var))
     }
 }
 
