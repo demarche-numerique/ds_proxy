@@ -2,7 +2,7 @@
 
 ## Contexte
 
-DS Proxy est un proxy HTTP de chiffrement en streaming. Il est utilisé sur [démarches-simplifées](https://github.com/demarches-simplifiees/demarches-simplifiees.fr) avec un backend Openstack Swift mais devrait être compatible avec le protocol S3.
+DS Proxy est un proxy HTTP de chiffrement en streaming compatible S3 et Swift. Il est utilisé sur [demarche.numerique.gouv.fr](https://github.com/demarche-numerique/demarche.numerique.gouv.fr).
 Il permet de se prémunir d'accès non autorisé aux espaces de stockages mutualisés de type object storage en y stockant uniquement de la donnée chiffrée.
 
 Fonctionnalités :
@@ -13,6 +13,16 @@ Fonctionnalités :
 - supporte de multiples clés de chiffrement pour se conformer à une politique de péremption de clés
 - possède une url de health check `/ping` qui renvoie une 404 si le fichier `maintenance` est présent à côté du binaire
 - peut garantir qu'un fichier est uploadé une fois
+
+## Limitations S3 connues
+
+Pour le moment, le proxy supporte l'upload des fichiers en mode S3 uniquement via la méthode PUT.
+
+N'est pas supporté pour le moment :
+- l'upload multipart
+- le chunk upload
+
+Également, de part son implémentation actuelle, le téléchargement parallèle de fichier a une performance médiocre.
 
 ## Pour commencer
 
@@ -89,8 +99,6 @@ Exemple :
 ```bash
 --redis_pool_max_size=32
 ```
-
-**Remarque** : Assurez-vous que votre instance Redis est correctement configurée et surveillée pour garantir une haute disponibilité et éviter les interruptions de service.
 
 ## Comment contribuer ?
 
