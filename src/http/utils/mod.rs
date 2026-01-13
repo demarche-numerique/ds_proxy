@@ -1,6 +1,5 @@
 use actix_web::http::{header, header::HeaderMap};
 
-pub mod memory_or_file_buffer;
 pub mod partial_extractor;
 pub mod s3_helper;
 pub mod verify_signature;

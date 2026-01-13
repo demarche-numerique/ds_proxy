@@ -16,7 +16,13 @@ pub fn encrypt(config: EncryptConfig) {
         .get_last_key()
         .expect("no key avalaible for encryption");
 
-    let encoder = Encoder::new(key, key_id, config.chunk_size, Box::new(source_stream));
+    let encoder = Encoder::new(
+        key,
+        key_id,
+        config.chunk_size,
+        Box::new(source_stream),
+        None,
+    );
 
     let buf = block_on_stream(encoder).map(|r| r.unwrap()).fold(
         BytesMut::with_capacity(64),
