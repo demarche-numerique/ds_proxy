@@ -2,7 +2,7 @@ extern crate ds_proxy;
 
 use ds_proxy::crypto::*;
 use ds_proxy::keyring::Keyring;
-use sodiumoxide::crypto::secretstream::xchacha20poly1305::{Key, KEYBYTES};
+use libsodium_rs::crypto_secretstream::xchacha20poly1305::{Key, KEYBYTES};
 use std::collections::HashMap;
 
 use actix_web::web::{BufMut, Bytes, BytesMut};
@@ -82,7 +82,7 @@ fn build_keyring() -> Keyring {
     ];
 
     let mut hash = HashMap::new();
-    hash.insert(0, Key(key));
+    hash.insert(0, Key::from_bytes(&key).expect("Invalid key"));
 
     Keyring::new(hash)
 }

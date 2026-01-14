@@ -1,7 +1,7 @@
 extern crate ds_proxy;
 extern crate env_logger;
+extern crate libsodium_rs;
 extern crate log;
-extern crate sodiumoxide;
 
 use docopt::Docopt;
 use ds_proxy::args::{Args, USAGE};
@@ -19,7 +19,7 @@ fn main() {
         let _guard = sentry::init(url);
     }
 
-    sodiumoxide::init().unwrap();
+    libsodium_rs::ensure_init().unwrap();
 
     let docopt: Docopt = Docopt::new(USAGE)
         .unwrap_or_else(|e| e.exit())

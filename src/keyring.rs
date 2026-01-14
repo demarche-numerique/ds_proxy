@@ -1,5 +1,5 @@
+use libsodium_rs::crypto_secretstream::xchacha20poly1305::Key;
 use log::trace;
-use sodiumoxide::crypto::secretstream::xchacha20poly1305::Key;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]

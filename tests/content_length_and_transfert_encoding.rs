@@ -1,5 +1,5 @@
 use ds_proxy::{config::DEFAULT_CHUNK_SIZE, crypto::header::*};
-use sodiumoxide::crypto::secretstream::xchacha20poly1305::{ABYTES, HEADERBYTES};
+use libsodium_rs::crypto_secretstream::xchacha20poly1305::{ABYTES, HEADERBYTES};
 use std::fs::File;
 use std::io::Write;
 
