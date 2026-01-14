@@ -25,7 +25,6 @@ fn encrypt_and_decrypt() {
         .arg(encrypted_path)
         .env("DS_KEYRING", DS_KEYRING)
         .env("DS_PASSWORD", PASSWORD)
-        .env("DS_SALT", SALT)
         .assert()
         .success();
 
@@ -36,7 +35,6 @@ fn encrypt_and_decrypt() {
         .arg(decrypted_path)
         .env("DS_KEYRING", DS_KEYRING)
         .env("DS_PASSWORD", PASSWORD)
-        .env("DS_SALT", SALT)
         .assert()
         .success();
 
@@ -59,7 +57,6 @@ fn decrypt_witness_file() {
         .arg(decrypted_path)
         .env("DS_KEYRING", DS_KEYRING)
         .env("DS_PASSWORD", PASSWORD)
-        .env("DS_SALT", SALT)
         .assert()
         .success();
 
@@ -80,8 +77,7 @@ fn the_app_crashes_on_a_missing_password() {
         .arg("proxy")
         .arg(ENCRYPTED_COMPUTER_SVG_PATH)
         .arg(decrypted_path)
-        .env("DS_KEYRING", DS_KEYRING)
-        .env("DS_SALT", SALT);
+        .env("DS_KEYRING", DS_KEYRING);
 
     decrypt_cmd.assert().failure();
 }
@@ -101,8 +97,7 @@ fn the_app_crashes_with_an_invalid_password() {
         .arg(ENCRYPTED_COMPUTER_SVG_PATH)
         .arg(decrypted_path)
         .env("DS_KEYRING", DS_KEYRING)
-        .env("DS_PASSWORD", password)
-        .env("DS_SALT", SALT);
+        .env("DS_PASSWORD", password);
 
     decrypt_cmd.assert().failure();
 }

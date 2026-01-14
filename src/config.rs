@@ -51,7 +51,6 @@ pub struct HttpConfig {
 #[derive(Debug, Clone)]
 pub struct AddKeyConfig {
     pub password: String,
-    pub salt: String,
     pub keyring_file: String,
 }
 
@@ -63,18 +62,16 @@ impl Config {
                 .expect("Missing password, use DS_PASSWORD env or --password-file cli argument"),
         };
 
-        let salt = string_from(&args.flag_salt, "DS_SALT");
         let keyring_file = string_from(&args.flag_keyring_file, "DS_KEYRING");
 
         if args.cmd_add_key {
             return Config::AddKeyConfig(AddKeyConfig {
                 password,
-                salt,
                 keyring_file,
             });
         }
 
-        let keyring = load_keyring(&keyring_file, password, salt);
+        let keyring = load_keyring(&keyring_file, password);
 
         if args.cmd_encrypt {
             Config::Encrypt(EncryptConfig {

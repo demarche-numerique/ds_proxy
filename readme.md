@@ -45,7 +45,7 @@ Description=DS Proxy Service
 After=network.target
 
 [Service]
-ExectStart=/usr/bin/ds_proxy proxy --password-file /var/ds_proxy/password --salt a_32_charactere_long_salt_123456 --keyring-file /var/ds_proxy/keyring.toml  --local-encryption-directory /var/ds_proxy/local_encryption/ --address 0.0.0.0:4444 --upstream_url 'https://my-storage-object.com'
+ExectStart=/usr/bin/ds_proxy proxy --password-file /var/ds_proxy/password --keyring-file /var/ds_proxy/keyring.toml  --local-encryption-directory /var/ds_proxy/local_encryption/ --address 0.0.0.0:4444 --upstream_url 'https://my-storage-object.com'
 
 Environment=RUST_LOG="actix_web=info"
 ...

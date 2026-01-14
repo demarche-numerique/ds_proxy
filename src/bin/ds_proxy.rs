@@ -32,9 +32,7 @@ fn main() {
     match config {
         Encrypt(config) => file::encrypt(config),
         Decrypt(config) => file::decrypt(config),
-        AddKeyConfig(config) => {
-            add_random_key_to_keyring(&config.keyring_file, config.password, config.salt)
-        }
+        AddKeyConfig(config) => add_random_key_to_keyring(&config.keyring_file, config.password),
         Http(config) => http::main(config).unwrap(),
     }
 }
