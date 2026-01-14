@@ -19,7 +19,6 @@ pub use curl::*;
 pub const PASSWORD: &str = "plop";
 pub const SALT: &str = "12345678901234567890123456789012";
 pub const DS_KEYRING: &str = "tests/fixtures/keyring.toml";
-pub const CHUNK_SIZE: usize = 512;
 
 pub const COMPUTER_SVG_PATH: &str = "tests/fixtures/computer.svg";
 pub static COMPUTER_SVG_BYTES: Bytes =
@@ -99,8 +98,7 @@ pub fn launch_proxy(
         .arg("--s3-region=region")
         .env("DS_KEYRING", keyring)
         .env("DS_PASSWORD", PASSWORD)
-        .env("DS_SALT", SALT)
-        .env("DS_CHUNK_SIZE", CHUNK_SIZE.to_string());
+        .env("DS_SALT", SALT);
 
     if !enable_s3_signature_check {
         command.arg("--bypass-s3-signature-check");
@@ -179,7 +177,6 @@ pub fn decrypt(
         .env("DS_KEYRING", DS_KEYRING)
         .env("DS_PASSWORD", PASSWORD)
         .env("DS_SALT", SALT)
-        .env("DS_CHUNK_SIZE", CHUNK_SIZE.to_string())
         .assert()
         .success()
 }

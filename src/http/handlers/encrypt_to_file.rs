@@ -1,5 +1,7 @@
 use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 
+use crate::config::DEFAULT_CHUNK_SIZE;
+
 use super::*;
 
 pub async fn encrypt_to_file(
@@ -14,7 +16,7 @@ pub async fn encrypt_to_file(
         .get_last_key()
         .expect("no key avalaible for encryption");
 
-    let mut encrypted_stream = Encoder::new(key, id, config.chunk_size, Box::new(payload), None);
+    let mut encrypted_stream = Encoder::new(key, id, DEFAULT_CHUNK_SIZE, Box::new(payload), None);
 
     log::info!("Encrypting to file: {}", filepath.display());
 

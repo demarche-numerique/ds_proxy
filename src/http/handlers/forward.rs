@@ -1,3 +1,4 @@
+use crate::config::DEFAULT_CHUNK_SIZE;
 use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
@@ -56,7 +57,7 @@ pub async fn forward(
     }
 
     let forward_length: Option<usize> = content_length(req.headers())
-        .map(|content_length| encrypted_content_length(content_length, config.chunk_size));
+        .map(|content_length| encrypted_content_length(content_length, DEFAULT_CHUNK_SIZE));
 
     for header in &FORWARD_REQUEST_HEADERS_TO_REMOVE {
         forwarded_req.headers_mut().remove(header);
@@ -73,7 +74,7 @@ pub async fn forward(
     let encrypted_stream = Encoder::<Error>::new(
         key,
         key_id,
-        config.chunk_size,
+        DEFAULT_CHUNK_SIZE,
         Box::new(convert_payload),
         Some(hasher_clone),
     );

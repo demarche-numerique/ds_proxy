@@ -1,4 +1,4 @@
-use ds_proxy::crypto::header::*;
+use ds_proxy::{config::DEFAULT_CHUNK_SIZE, crypto::header::*};
 use sodiumoxide::crypto::secretstream::xchacha20poly1305::{ABYTES, HEADERBYTES};
 use std::fs::File;
 use std::io::Write;
@@ -15,10 +15,11 @@ async fn content_length_and_transfert_encoding() {
 
     // multiple of chunk size
     let nb_chunk = 2;
-    let original_length = nb_chunk * CHUNK_SIZE;
+    let original_length = nb_chunk * DEFAULT_CHUNK_SIZE;
     let content = vec![0; original_length];
 
-    let expected_encrypted_length = HEADER_V2_SIZE + HEADERBYTES + nb_chunk * (ABYTES + CHUNK_SIZE);
+    let expected_encrypted_length =
+        HEADER_V2_SIZE + HEADERBYTES + nb_chunk * (ABYTES + DEFAULT_CHUNK_SIZE);
 
     let (uploaded_length, downloaded_length) =
         uploaded_and_downloaded_content_length(&content).await;
@@ -28,11 +29,11 @@ async fn content_length_and_transfert_encoding() {
 
     // not a multiple of chunk size
     let nb_chunk = 2;
-    let original_length = nb_chunk * CHUNK_SIZE + 1;
+    let original_length = nb_chunk * DEFAULT_CHUNK_SIZE + 1;
     let content = vec![0; original_length];
 
     let expected_encrypted_length =
-        HEADER_V2_SIZE + HEADERBYTES + nb_chunk * (ABYTES + CHUNK_SIZE) + ABYTES + 1;
+        HEADER_V2_SIZE + HEADERBYTES + nb_chunk * (ABYTES + DEFAULT_CHUNK_SIZE) + ABYTES + 1;
 
     let (uploaded_length, downloaded_length) =
         uploaded_and_downloaded_content_length(&content).await;
