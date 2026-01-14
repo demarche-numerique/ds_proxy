@@ -31,7 +31,6 @@ pub struct DecryptConfig {
 #[derive(Debug, Clone)]
 pub struct EncryptConfig {
     pub keyring: Keyring,
-    pub chunk_size: usize,
     pub input_file: String,
     pub output_file: String,
 }
@@ -40,7 +39,6 @@ pub struct EncryptConfig {
 pub struct HttpConfig {
     pub upstream_base_url: Url,
     pub keyring: Keyring,
-    pub chunk_size: usize,
     pub address: SocketAddr,
     pub local_encryption_directory: PathBuf,
     pub s3_config: Option<S3Config>,
@@ -76,20 +74,11 @@ impl Config {
             });
         }
 
-        let chunk_size = match &args.flag_chunk_size {
-            Some(chunk_size) => *chunk_size,
-            None => match env::var("DS_CHUNK_SIZE") {
-                Ok(chunk_str) => chunk_str.parse::<usize>().unwrap_or(DEFAULT_CHUNK_SIZE),
-                _ => DEFAULT_CHUNK_SIZE,
-            },
-        };
-
         let keyring = load_keyring(&keyring_file, password, salt);
 
         if args.cmd_encrypt {
             Config::Encrypt(EncryptConfig {
                 keyring,
-                chunk_size,
                 input_file: args.arg_input_file.clone().unwrap(),
                 output_file: args.arg_output_file.clone().unwrap(),
             })
@@ -187,7 +176,6 @@ impl Config {
 
             Config::Http(HttpConfig {
                 keyring,
-                chunk_size,
                 upstream_base_url,
                 address,
                 local_encryption_directory,
@@ -437,7 +425,6 @@ mod tests {
 
         HttpConfig {
             keyring,
-            chunk_size: DEFAULT_CHUNK_SIZE,
             upstream_base_url: normalize_and_parse_upstream_url(upstream_base_url.to_string()),
             address: "127.0.0.1:1234".to_socket_addrs().unwrap().next().unwrap(),
             local_encryption_directory: PathBuf::from(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY),

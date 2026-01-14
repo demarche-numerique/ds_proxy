@@ -19,7 +19,7 @@ pub fn encrypt(config: EncryptConfig) {
     let encoder = Encoder::new(
         key,
         key_id,
-        config.chunk_size,
+        DEFAULT_CHUNK_SIZE,
         Box::new(source_stream),
         None,
     );
