@@ -4,15 +4,15 @@ use actix_web::web::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::stream::Stream;
+use libsodium_rs::crypto_secretstream::{xchacha20poly1305, Key, PullState};
 use log::{error, trace};
-use sodiumoxide::crypto::secretstream::xchacha20poly1305;
-use sodiumoxide::crypto::secretstream::xchacha20poly1305::{Header, Key};
+use std::convert::TryInto;
 
 pub struct Decoder<E> {
     inner: Box<dyn Stream<Item = Result<Bytes, E>> + Unpin>,
     inner_ended: bool,
     decipher_type: DecipherType,
-    stream_decoder: Option<xchacha20poly1305::Stream<xchacha20poly1305::Pull>>,
+    stream_decoder: Option<PullState>,
     buffer: BytesMut,
     keyring: Keyring,
 }
@@ -67,14 +67,18 @@ impl<E> Decoder<E> {
 
                 if xchacha20poly1305::HEADERBYTES <= self.buffer.len() {
                     trace!("decrypting the header");
-                    // TODO: throw error
-                    let header =
-                        Header::from_slice(&self.buffer.split_to(xchacha20poly1305::HEADERBYTES))
-                            .unwrap();
 
-                    // TODO: throw error
-                    self.stream_decoder =
-                        Some(xchacha20poly1305::Stream::init_pull(&header, &key).unwrap());
+                    let header_array: [u8; xchacha20poly1305::HEADERBYTES] = self
+                        .buffer
+                        .split_to(xchacha20poly1305::HEADERBYTES)
+                        .as_ref()
+                        .try_into()
+                        .expect("slice with incorrect length");
+
+                    let pull_state = PullState::init_pull(&header_array, &key)
+                        .expect("Failed to initialize pull state");
+
+                    self.stream_decoder = Some(pull_state);
 
                     self.decrypt_buffer(cx)
                 } else {
