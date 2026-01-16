@@ -17,7 +17,6 @@ mod curl;
 pub use curl::*;
 
 pub const PASSWORD: &str = "plop";
-pub const SALT: &str = "12345678901234567890123456789012";
 pub const DS_KEYRING: &str = "tests/fixtures/keyring.toml";
 
 pub const COMPUTER_SVG_PATH: &str = "tests/fixtures/computer.svg";
@@ -97,8 +96,7 @@ pub fn launch_proxy(
         .arg("--s3-secret-key=secret")
         .arg("--s3-region=region")
         .env("DS_KEYRING", keyring)
-        .env("DS_PASSWORD", PASSWORD)
-        .env("DS_SALT", SALT);
+        .env("DS_PASSWORD", PASSWORD);
 
     if !enable_s3_signature_check {
         command.arg("--bypass-s3-signature-check");
@@ -176,7 +174,6 @@ pub fn decrypt(
         .arg(decrypted_path)
         .env("DS_KEYRING", DS_KEYRING)
         .env("DS_PASSWORD", PASSWORD)
-        .env("DS_SALT", SALT)
         .assert()
         .success()
 }
@@ -190,7 +187,7 @@ pub fn decrypt_bytes(input: Bytes) -> BytesMut {
     let header_decoder = HeaderDecoder::new(&mut boxy);
     let (cypher_type, buff) = block_on(header_decoder);
 
-    let keyring = load_keyring(DS_KEYRING, PASSWORD.to_string(), SALT.to_string());
+    let keyring = load_keyring(DS_KEYRING, PASSWORD.to_string());
 
     let decoder = Decoder::new_from_cypher_and_buffer(keyring, boxy, cypher_type, buff);
 
@@ -214,7 +211,6 @@ pub fn add_a_key(keyring_path: &str) -> assert_cmd::assert::Assert {
         .arg("add-key")
         .env("DS_KEYRING", keyring_path)
         .env("DS_PASSWORD", PASSWORD)
-        .env("DS_SALT", SALT)
         .assert()
         .success()
 }
