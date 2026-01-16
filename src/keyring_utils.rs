@@ -13,6 +13,8 @@ pub fn load_keyring(keyring_file: &str, master_password: String) -> Keyring {
     let secrets = load_secrets(keyring_file);
     let salt = secrets.salt;
 
+    compare_salt_with_env(&salt);
+
     let master_key = build_master_key(master_password, salt);
 
     let hash_map = secrets
@@ -30,9 +32,25 @@ pub fn add_random_key_to_keyring(keyring_file: &str, master_password: String) {
     let mut secrets = load_secrets(keyring_file);
     let salt = secrets.salt.clone();
 
+    compare_salt_with_env(&salt);
+
     let new_key = random_key();
     let master_key = build_master_key(master_password, salt);
     add_key(keyring_file, &master_key, new_key, &mut secrets);
+}
+
+fn compare_salt_with_env(salt: &String) {
+    let decoded_salt_u8 = STANDARD
+        .decode(salt)
+        .expect("Failed to decode salt from base64");
+
+    let decoded_salt: String = String::from_utf8(decoded_salt_u8).expect("Salt is not valid UTF-8");
+
+    let env_salt = std::env::var("DS_SALT").unwrap_or_else(|_| "".to_string());
+
+    log::trace!("env_salt: {}", env_salt);
+    log::trace!("decoded_file_salt: {}", decoded_salt);
+    log::trace!("decoded_file_salt == env_salt: {}", decoded_salt == env_salt);
 }
 
 fn add_key(
