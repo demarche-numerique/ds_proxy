@@ -11,7 +11,7 @@ pub use self::header_decoder::HeaderDecoder;
 
 use decipher_type::DecipherType;
 use header::*;
-use sodiumoxide::crypto::secretstream::xchacha20poly1305::{ABYTES, HEADERBYTES};
+use libsodium_rs::crypto_secretstream::xchacha20poly1305::{ABYTES, HEADERBYTES};
 
 pub fn encrypted_content_length(clear_length: usize, chunk_size: usize) -> usize {
     if clear_length == 0 {

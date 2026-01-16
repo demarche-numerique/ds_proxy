@@ -65,7 +65,7 @@ rm -f password_file
 ## Dans le détail
 
 ### Algo
-DS Proxy utilise actuellement l'algorithme de chiffrement [xchacha20poly1305](https://doc.libsodium.org/secret-key_cryptography/aead/chacha20-poly1305/xchacha20-poly1305_construction) proposé par la librairie [sodium](https://doc.libsodium.org/) dont l'interface est portée en rust par [sodiumoxide](https://github.com/sodiumoxide/sodiumoxide).
+DS Proxy utilise actuellement l'algorithme de chiffrement [xchacha20poly1305](https://doc.libsodium.org/secret-key_cryptography/aead/chacha20-poly1305/xchacha20-poly1305_construction) proposé par la librairie [sodium](https://doc.libsodium.org/) dont l'interface est portée en rust par [libsodium_rs](https://github.com/jedisct1/libsodium-rs).
 
 Les clés de chiffrement sont stockées sur un fichier `keyring.toml`. Ce fichier est lui-même chiffré à l'aide d'un mot de passe maître et d'un sel.
 

@@ -7,7 +7,7 @@ build = "build.rs" # Cargo only supports one build script per project at the mom
 rust-version = "1.91.0"
 
 [dependencies]
-sodiumoxide = "*"
+libsodium-rs = "*"
 futures = "*"
 futures-core = "*"
 actix-web = { version="*", features = ["openssl"] }

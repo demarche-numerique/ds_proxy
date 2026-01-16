@@ -3,18 +3,16 @@ use actix_web::web::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::stream::Stream;
+use libsodium_rs::crypto_secretstream::{xchacha20poly1305::TAG_MESSAGE, Key, PushState};
 use log::trace;
 use md5::digest::DynDigest;
-use sodiumoxide::crypto::secretstream::xchacha20poly1305;
-use sodiumoxide::crypto::secretstream::xchacha20poly1305::Key;
-use sodiumoxide::crypto::secretstream::Tag;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct Encoder<E> {
     inner: Box<dyn Stream<Item = Result<Bytes, E>> + Unpin>,
     inner_ended: bool,
-    stream_encoder: Option<xchacha20poly1305::Stream<xchacha20poly1305::Push>>,
+    stream_encoder: Option<PushState>,
     buffer: BytesMut,
     chunk_size: usize,
     key: Key,
@@ -52,7 +50,7 @@ impl<E> Encoder<E> {
                 None => {
                     trace!("no stream encoder");
                     let (enc_stream, encryption_header) =
-                        xchacha20poly1305::Stream::init_push(&self.key).unwrap();
+                        PushState::init_push(&self.key).expect("Failed to initialize push state");
 
                     self.stream_encoder = Some(enc_stream);
 
@@ -79,7 +77,7 @@ impl<E> Encoder<E> {
                             trace!("encoding a whole chunk");
 
                             let encoded_message = stream
-                                .push(&self.buffer.split_to(self.chunk_size), None, Tag::Message)
+                                .push(&self.buffer.split_to(self.chunk_size), None, TAG_MESSAGE)
                                 .unwrap();
 
                             encoded_buff.extend_from_slice(&encoded_message);
@@ -92,7 +90,7 @@ impl<E> Encoder<E> {
                             trace!("the stream is closed, encoding whats left");
                             let rest = self.buffer.len();
                             let encoded = stream
-                                .push(&self.buffer.split_to(rest), None, Tag::Message)
+                                .push(&self.buffer.split_to(rest), None, TAG_MESSAGE)
                                 .unwrap();
                             Poll::Ready(Some(Ok(Bytes::from(encoded))))
                         } else {
