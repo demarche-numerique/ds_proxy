@@ -16,6 +16,19 @@ pub fn load_keyring(keyring_file: &str, master_password: String) -> Keyring {
     let secrets = load_secrets(keyring_file);
     let salt = secrets.salt;
 
+    let env_salt = std::env::var("DS_SALT").unwrap();
+    let bytes_env_salt: [u8; SALTBYTES] = env_salt
+        .as_bytes()
+        .try_into()
+        .expect("Invalid KEYRING_SALT length");
+
+    println!("salt from file: {:x?}", salt);
+    println!("salt from env : {:x?}", bytes_env_salt);
+    println!(
+        "salts match  :  {}",
+        salt.iter().zip(bytes_env_salt.iter()).all(|(a, b)| a == b)
+    );
+
     let master_key = build_master_key(master_password, &salt);
 
     let hash_map = secrets
