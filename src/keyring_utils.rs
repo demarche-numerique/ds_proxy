@@ -1,11 +1,12 @@
 use super::keyring::Keyring;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use libsodium_rs::crypto_pwhash::scryptsalsa208sha256;
+use libsodium_rs::crypto_pwhash::scryptsalsa208sha256::{self, SALTBYTES};
 use libsodium_rs::crypto_secretbox::{self, Nonce};
 use libsodium_rs::crypto_secretstream::{xchacha20poly1305::KEYBYTES, Key};
 use libsodium_rs::random;
 use serde::{Deserialize, Serialize};
+use serde_with::{base64::Base64, serde_as};
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -13,7 +14,7 @@ pub fn load_keyring(keyring_file: &str, master_password: String) -> Keyring {
     let secrets = load_secrets(keyring_file);
     let salt = secrets.salt;
 
-    let master_key = build_master_key(master_password, salt);
+    let master_key = build_master_key(master_password, &salt);
 
     let hash_map = secrets
         .cipher_keyring
@@ -28,10 +29,10 @@ pub fn load_keyring(keyring_file: &str, master_password: String) -> Keyring {
 
 pub fn add_random_key_to_keyring(keyring_file: &str, master_password: String) {
     let mut secrets = load_secrets(keyring_file);
-    let salt = secrets.salt.clone();
+    let salt = secrets.salt;
 
     let new_key = random_key();
-    let master_key = build_master_key(master_password, salt);
+    let master_key = build_master_key(master_password, &salt);
     add_key(keyring_file, &master_key, new_key, &mut secrets);
 }
 
@@ -51,9 +52,7 @@ fn add_key(
 }
 
 fn random_key() -> [u8; KEYBYTES] {
-    let mut key = [0u8; KEYBYTES];
-    libsodium_rs::random::fill_bytes(&mut key);
-    key
+    random::bytes(KEYBYTES).try_into().unwrap()
 }
 
 fn to_u64(id: &str) -> u64 {
@@ -68,10 +67,10 @@ fn load_secrets(keyring_file: &str) -> Secrets {
     if let Ok(text_secrets) = std::fs::read_to_string(keyring_file) {
         toml::from_str(&text_secrets).unwrap()
     } else {
-        let random_salt = random::bytes(scryptsalsa208sha256::SALTBYTES);
+        let random_salt = random::bytes(SALTBYTES).try_into().unwrap();
         Secrets {
             cipher_keyring: HashMap::new(),
-            salt: STANDARD.encode(&random_salt),
+            salt: random_salt,
         }
     }
 }
@@ -86,17 +85,11 @@ fn decrypt(master_key: &crypto_secretbox::Key, nonce_cipher: Vec<u8>) -> [u8; KE
         .unwrap()
 }
 
-fn build_master_key(master_password: String, salt: String) -> crypto_secretbox::Key {
-    let salt_bytes = STANDARD
-        .decode(&salt)
-        .expect("Failed to decode salt from base64");
-    let typed_salt: [u8; scryptsalsa208sha256::SALTBYTES] =
-        salt_bytes.try_into().expect("Salt must be 16 bytes long");
-
+fn build_master_key(master_password: String, salt: &[u8; SALTBYTES]) -> crypto_secretbox::Key {
     let key: [u8; KEYBYTES] = scryptsalsa208sha256::pwhash(
         KEYBYTES,
         master_password.as_bytes(),
-        &typed_salt,
+        salt,
         scryptsalsa208sha256::OPSLIMIT_INTERACTIVE,
         scryptsalsa208sha256::MEMLIMIT_INTERACTIVE,
     )
@@ -147,9 +140,12 @@ fn save_secrets(keyring_file: &str, secrets: &Secrets) {
     std::fs::write(keyring_file, text_secrets).unwrap()
 }
 
+#[serde_as]
 #[derive(Serialize, Deserialize, Debug)]
 struct Secrets {
     #[serde(rename = "keys")]
     cipher_keyring: HashMap<String, String>,
-    salt: String,
+
+    #[serde_as(as = "Base64")]
+    salt: [u8; SALTBYTES],
 }
