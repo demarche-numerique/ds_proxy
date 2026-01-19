@@ -17,6 +17,7 @@ actix-files = "*"
 bytes = "*"
 docopt = "*"
 serde = { version = "*", features = ["derive"] }
+serde_with = { version = "*", features = ["base64"] }
 toml = "*"
 log = "*"
 env_logger = "*"
