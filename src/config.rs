@@ -19,6 +19,7 @@ pub enum Config {
     Encrypt(EncryptConfig),
     Http(HttpConfig),
     AddKeyConfig(AddKeyConfig),
+    RotatePassword(RotatePasswordConfig),
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,12 @@ pub struct AddKeyConfig {
     pub keyring_file: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct RotatePasswordConfig {
+    pub password: String,
+    pub keyring_file: String,
+}
+
 impl Config {
     pub fn create_config(args: &args::Args) -> Config {
         let password = match &args.flag_password_file {
@@ -66,6 +73,13 @@ impl Config {
 
         if args.cmd_add_key {
             return Config::AddKeyConfig(AddKeyConfig {
+                password,
+                keyring_file,
+            });
+        }
+
+        if args.cmd_rotate_password {
+            return Config::RotatePassword(RotatePasswordConfig {
                 password,
                 keyring_file,
             });
