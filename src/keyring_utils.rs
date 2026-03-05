@@ -72,7 +72,7 @@ fn load_secrets(keyring_file: &str) -> Secrets {
         let random_salt = random::bytes(SALTBYTES).try_into().unwrap();
         Secrets {
             cipher_keyring: HashMap::new(),
-            salt: random_salt,
+            salt: Some(random_salt),
         }
     }
 }
@@ -87,19 +87,29 @@ fn decrypt(master_key: &Key, nonce_cipher: Vec<u8>) -> [u8; KEYBYTES] {
         .unwrap()
 }
 
-fn build_master_key(master_password: String, salt: &[u8; SALTBYTES]) -> Key {
-    let key: [u8; KEYBYTES] = pwhash(
-        KEYBYTES,
-        master_password.as_bytes(),
-        salt,
-        OPSLIMIT_INTERACTIVE,
-        MEMLIMIT_INTERACTIVE,
-    )
-    .unwrap()
-    .try_into()
-    .unwrap();
+fn build_master_key(master_password: String, salt: &Option<[u8; SALTBYTES]>) -> Key {
+    match salt {
+        Some(salt) => {
+            let key: [u8; KEYBYTES] = pwhash(
+                KEYBYTES,
+                master_password.as_bytes(),
+                salt,
+                OPSLIMIT_INTERACTIVE,
+                MEMLIMIT_INTERACTIVE,
+            )
+            .unwrap()
+            .try_into()
+            .unwrap();
 
-    Key::from_bytes(&key).unwrap()
+            Key::from_bytes(&key).unwrap()
+        }
+        None => {
+            let key: [u8; KEYBYTES] = decode64(&master_password).try_into().expect(
+                "master password must be a valid base64-encoded 32-byte key when no salt is present",
+            );
+            Key::from_bytes(&key).unwrap()
+        }
+    }
 }
 
 fn next_id(secrets: &Secrets) -> String {
@@ -148,6 +158,7 @@ struct Secrets {
     #[serde(rename = "keys")]
     cipher_keyring: HashMap<String, String>,
 
-    #[serde_as(as = "Base64")]
-    salt: [u8; SALTBYTES],
+    #[serde_as(as = "Option<Base64>")]
+    #[serde(default)]
+    salt: Option<[u8; SALTBYTES]>,
 }
