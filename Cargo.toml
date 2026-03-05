@@ -5,6 +5,8 @@ authors = ["simon lehericey <mail@simon.lehericey.net>"]
 edition = "2018"
 build = "build.rs" # Cargo only supports one build script per project at the moment
 rust-version = "1.93.1"
+license = "AGPL-3.0-only"
+description = "DS Proxy is an S3 and Swift compatible streaming encryption HTTP proxy"
 
 [dependencies]
 libsodium-rs = "*"
