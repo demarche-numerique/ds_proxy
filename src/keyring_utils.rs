@@ -34,6 +34,37 @@ pub fn load_keyring(keyring_file: &str, master_password: String) -> Keyring {
     Keyring::new(hash_map)
 }
 
+pub fn rotate_password(keyring_file: &str, old_password: String) -> String {
+    let secrets = load_secrets(keyring_file);
+    let salt = secrets.salt;
+    let old_master_key = build_master_key(old_password, &salt);
+
+    let plain_keys: Vec<(String, [u8; KEYBYTES])> = secrets
+        .cipher_keyring
+        .iter()
+        .map(|(id, b64)| (id.clone(), decrypt(&old_master_key, decode64(b64))))
+        .collect();
+
+    let new_password_bytes: [u8; KEYBYTES] = random::bytes(KEYBYTES).try_into().unwrap();
+    let new_password = STANDARD.encode(new_password_bytes);
+
+    // as the new password is randomly generated, we do not need a salt
+    let new_master_key = build_master_key(new_password.clone(), &None);
+
+    let new_cipher_keyring: HashMap<String, String> = plain_keys
+        .into_iter()
+        .map(|(id, key)| (id, base64_cipher(&new_master_key, key)))
+        .collect();
+
+    let new_secrets = Secrets {
+        cipher_keyring: new_cipher_keyring,
+        salt: None,
+    };
+    save_secrets(keyring_file, &new_secrets);
+
+    new_password
+}
+
 pub fn add_random_key_to_keyring(keyring_file: &str, master_password: String) {
     let mut secrets = load_secrets(keyring_file);
     let salt = secrets.salt;
@@ -161,4 +192,62 @@ struct Secrets {
     #[serde_as(as = "Option<Base64>")]
     #[serde(default)]
     salt: Option<[u8; SALTBYTES]>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    fn create_keyring_file(password: &str, num_keys: usize) -> NamedTempFile {
+        let file = NamedTempFile::new().unwrap();
+        let keyring_path = file.path().to_str().unwrap();
+
+        // remove the file so add_random_key_to_keyring creates a fresh one
+        std::fs::remove_file(keyring_path).unwrap();
+
+        for _ in 0..num_keys {
+            add_random_key_to_keyring(keyring_path, password.to_string());
+        }
+
+        file
+    }
+
+    #[test]
+    fn rotate_password_preserves_keys() {
+        libsodium_rs::ensure_init().unwrap();
+
+        let old_password = "old_password";
+        let file = create_keyring_file(old_password, 3);
+        let keyring_path = file.path().to_str().unwrap();
+
+        let keyring_before = load_keyring(keyring_path, old_password.to_string());
+
+        let new_password = rotate_password(keyring_path, old_password.to_string());
+
+        assert_ne!(new_password, old_password);
+
+        let keyring_after = load_keyring(keyring_path, new_password);
+
+        for id in 0..3u64 {
+            let key_before = keyring_before.get_key_by_id(&id).unwrap();
+            let key_after = keyring_after.get_key_by_id(&id).unwrap();
+            assert_eq!(key_before.as_bytes(), key_after.as_bytes());
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn rotate_password_invalidates_old_password() {
+        libsodium_rs::ensure_init().unwrap();
+
+        let old_password = "old_password";
+        let file = create_keyring_file(old_password, 1);
+        let keyring_path = file.path().to_str().unwrap();
+
+        rotate_password(keyring_path, old_password.to_string());
+
+        // loading with old password should panic
+        load_keyring(keyring_path, old_password.to_string());
+    }
 }

@@ -53,3 +53,4 @@ rand = "*"
 serial_test = "*"
 serde_json = "*"
 uuid = { version = "*", features = ["v4"] }
+tempfile = "3.26.0"
