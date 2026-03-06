@@ -97,15 +97,9 @@ fn decode64(text: &str) -> Vec<u8> {
 }
 
 fn load_secrets(keyring_file: &str) -> Secrets {
-    if let Ok(text_secrets) = std::fs::read_to_string(keyring_file) {
-        toml::from_str(&text_secrets).unwrap()
-    } else {
-        let random_salt = random::bytes(SALTBYTES).try_into().unwrap();
-        Secrets {
-            cipher_keyring: HashMap::new(),
-            salt: Some(random_salt),
-        }
-    }
+    let text_secrets = std::fs::read_to_string(keyring_file)
+        .unwrap_or_else(|_| panic!("keyring_file not found: {}", keyring_file));
+    toml::from_str(&text_secrets).unwrap()
 }
 
 fn decrypt(master_key: &Key, nonce_cipher: Vec<u8>) -> [u8; KEYBYTES] {
