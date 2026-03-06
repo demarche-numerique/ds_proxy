@@ -20,6 +20,7 @@ pub enum Config {
     Http(HttpConfig),
     AddKeyConfig(AddKeyConfig),
     RotatePassword(RotatePasswordConfig),
+    InitKeyring(InitKeyringConfig),
 }
 
 #[derive(Debug, Clone)]
@@ -61,8 +62,18 @@ pub struct RotatePasswordConfig {
     pub keyring_file: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct InitKeyringConfig {
+    pub keyring_file: String,
+}
+
 impl Config {
     pub fn create_config(args: &args::Args) -> Config {
+        if args.cmd_init_keyring {
+            let keyring_file = string_from(&args.flag_keyring_file, "DS_KEYRING");
+            return Config::InitKeyring(InitKeyringConfig { keyring_file });
+        }
+
         let password = match &args.flag_password_file {
             Some(password_file) => read_file_content(password_file),
             None => env::var("DS_PASSWORD")
