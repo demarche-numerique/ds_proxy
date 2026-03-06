@@ -34,6 +34,57 @@ pub fn load_keyring(keyring_file: &str, master_password: String) -> Keyring {
     Keyring::new(hash_map)
 }
 
+pub fn rotate_password(keyring_file: &str, old_password: String) -> String {
+    let secrets = load_secrets(keyring_file);
+    let salt = secrets.salt;
+    let old_master_key = build_master_key(old_password, &salt);
+
+    let plain_keys: Vec<(String, [u8; KEYBYTES])> = secrets
+        .cipher_keyring
+        .iter()
+        .map(|(id, b64)| (id.clone(), decrypt(&old_master_key, decode64(b64))))
+        .collect();
+
+    let new_password_bytes: [u8; KEYBYTES] = random::bytes(KEYBYTES).try_into().unwrap();
+    let new_password = STANDARD.encode(new_password_bytes);
+
+    // as the new password is randomly generated, we do not need a salt
+    let new_master_key = build_master_key(new_password.clone(), &None);
+
+    let new_cipher_keyring: HashMap<String, String> = plain_keys
+        .into_iter()
+        .map(|(id, key)| (id, base64_cipher(&new_master_key, key)))
+        .collect();
+
+    let new_secrets = Secrets {
+        cipher_keyring: new_cipher_keyring,
+        salt: None,
+    };
+    save_secrets(keyring_file, &new_secrets);
+
+    new_password
+}
+
+pub fn init_keyring(keyring_file: &str) -> String {
+    let password_bytes: [u8; KEYBYTES] = random::bytes(KEYBYTES).try_into().unwrap();
+    let master_password = STANDARD.encode(password_bytes);
+
+    let master_key = build_master_key(master_password.clone(), &None);
+    let new_key = random_key();
+    let new_base64_cipher = base64_cipher(&master_key, new_key);
+
+    let mut cipher_keyring = HashMap::new();
+    cipher_keyring.insert("0".to_string(), new_base64_cipher);
+
+    let secrets = Secrets {
+        cipher_keyring,
+        salt: None,
+    };
+    save_secrets(keyring_file, &secrets);
+
+    master_password
+}
+
 pub fn add_random_key_to_keyring(keyring_file: &str, master_password: String) {
     let mut secrets = load_secrets(keyring_file);
     let salt = secrets.salt;
@@ -66,15 +117,13 @@ fn decode64(text: &str) -> Vec<u8> {
 }
 
 fn load_secrets(keyring_file: &str) -> Secrets {
-    if let Ok(text_secrets) = std::fs::read_to_string(keyring_file) {
-        toml::from_str(&text_secrets).unwrap()
-    } else {
-        let random_salt = random::bytes(SALTBYTES).try_into().unwrap();
-        Secrets {
-            cipher_keyring: HashMap::new(),
-            salt: random_salt,
-        }
-    }
+    let text_secrets = std::fs::read_to_string(keyring_file).unwrap_or_else(|_| {
+        panic!(
+            "keyring_file not found: {}\nuse ds-proxy init-keyring --keyring-file {}",
+            keyring_file, keyring_file
+        )
+    });
+    toml::from_str(&text_secrets).unwrap()
 }
 
 fn decrypt(master_key: &Key, nonce_cipher: Vec<u8>) -> [u8; KEYBYTES] {
@@ -87,19 +136,29 @@ fn decrypt(master_key: &Key, nonce_cipher: Vec<u8>) -> [u8; KEYBYTES] {
         .unwrap()
 }
 
-fn build_master_key(master_password: String, salt: &[u8; SALTBYTES]) -> Key {
-    let key: [u8; KEYBYTES] = pwhash(
-        KEYBYTES,
-        master_password.as_bytes(),
-        salt,
-        OPSLIMIT_INTERACTIVE,
-        MEMLIMIT_INTERACTIVE,
-    )
-    .unwrap()
-    .try_into()
-    .unwrap();
+fn build_master_key(master_password: String, salt: &Option<[u8; SALTBYTES]>) -> Key {
+    match salt {
+        Some(salt) => {
+            let key: [u8; KEYBYTES] = pwhash(
+                KEYBYTES,
+                master_password.as_bytes(),
+                salt,
+                OPSLIMIT_INTERACTIVE,
+                MEMLIMIT_INTERACTIVE,
+            )
+            .unwrap()
+            .try_into()
+            .unwrap();
 
-    Key::from_bytes(&key).unwrap()
+            Key::from_bytes(&key).unwrap()
+        }
+        None => {
+            let key: [u8; KEYBYTES] = decode64(&master_password).try_into().expect(
+                "master password must be a valid base64-encoded 32-byte key when no salt is present",
+            );
+            Key::from_bytes(&key).unwrap()
+        }
+    }
 }
 
 fn next_id(secrets: &Secrets) -> String {
@@ -148,6 +207,62 @@ struct Secrets {
     #[serde(rename = "keys")]
     cipher_keyring: HashMap<String, String>,
 
-    #[serde_as(as = "Base64")]
-    salt: [u8; SALTBYTES],
+    #[serde_as(as = "Option<Base64>")]
+    #[serde(default)]
+    salt: Option<[u8; SALTBYTES]>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    fn create_keyring_file(num_keys: usize) -> (NamedTempFile, String) {
+        let file = NamedTempFile::new().unwrap();
+        let keyring_path = file.path().to_str().unwrap();
+
+        let password = init_keyring(keyring_path);
+
+        for _ in 1..num_keys {
+            add_random_key_to_keyring(keyring_path, password.clone());
+        }
+
+        (file, password)
+    }
+
+    #[test]
+    fn rotate_password_preserves_keys() {
+        libsodium_rs::ensure_init().unwrap();
+
+        let (file, old_password) = create_keyring_file(3);
+        let keyring_path = file.path().to_str().unwrap();
+
+        let keyring_before = load_keyring(keyring_path, old_password.clone());
+
+        let new_password = rotate_password(keyring_path, old_password.clone());
+
+        assert_ne!(new_password, old_password);
+
+        let keyring_after = load_keyring(keyring_path, new_password);
+
+        for id in 0..3u64 {
+            let key_before = keyring_before.get_key_by_id(&id).unwrap();
+            let key_after = keyring_after.get_key_by_id(&id).unwrap();
+            assert_eq!(key_before.as_bytes(), key_after.as_bytes());
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn rotate_password_invalidates_old_password() {
+        libsodium_rs::ensure_init().unwrap();
+
+        let (file, old_password) = create_keyring_file(1);
+        let keyring_path = file.path().to_str().unwrap();
+
+        rotate_password(keyring_path, old_password.clone());
+
+        // loading with old password should panic
+        load_keyring(keyring_path, old_password);
+    }
 }

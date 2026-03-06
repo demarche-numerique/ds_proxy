@@ -8,7 +8,9 @@ Usage:
   ds_proxy encrypt <input-file> <output-file> [--password-file=<password-file>] [--keyring-file=<keyring-file>]
   ds_proxy decrypt <input-file> <output-file> [--password-file=<password-file>] [--keyring-file=<keyring-file>]
   ds_proxy proxy [--address=<address>] [--bypass-ssl-certificate-check] [--password-file=<password-file>] [--upstream-url=<upstream-url>] [--local-encryption-directory=<local-encryption-directory>] [--write-once] [--keyring-file=<keyring-file>] [--s3-access-key=<s3-access-key>] [--s3-secret-key=<s3-secret-key>] [--s3-region=<s3-region>] [--bypass-s3-signature-check] [--backend-connection-timeout=<backend-connection-timeout>] [--redis-url=<redis-url>] [--redis-timeout-wait=<redis-timeout-wait>] [--redis-timeout-create=<redis-timeout-create>] [--redis-timeout-recycle=<redis-timeout-recycle>] [--redis-pool-max-size=<redis-pool-max-size>]
+  ds_proxy init-keyring [--keyring-file=<keyring-file>]
   ds_proxy add-key [--password-file=<password-file>] [--keyring-file=<keyring-file>]
+  ds_proxy rotate-password [--password-file=<password-file>] [--keyring-file=<keyring-file>]
   ds_proxy (-h | --help)
   ds_proxy --version
 
@@ -34,7 +36,9 @@ pub struct Args {
     pub cmd_encrypt: bool,
     pub cmd_decrypt: bool,
     pub cmd_proxy: bool,
+    pub cmd_init_keyring: bool,
     pub cmd_add_key: bool,
+    pub cmd_rotate_password: bool,
     pub flag_redis_url: Option<Url>,
     pub flag_write_once: bool,
     pub flag_redis_timeout_wait: Option<u64>,
