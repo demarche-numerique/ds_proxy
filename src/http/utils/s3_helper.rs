@@ -46,8 +46,8 @@ fn sign_request_with_time(
     let mut host = uri.host().unwrap_or_default().to_string();
     let port = uri.port();
 
-    if port.is_some() {
-        host = format!("{}:{}", host, port.unwrap().as_str());
+    if let Some(port) = port {
+        host = format!("{}:{}", host, port.as_str());
     }
 
     req = req
