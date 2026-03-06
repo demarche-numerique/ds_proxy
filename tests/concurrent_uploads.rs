@@ -27,7 +27,7 @@ fn concurent_uploads() {
     const SERVER_LATENCY: Duration = Duration::from_millis(100);
 
     let _proxy_node_and_redis =
-        ProxyAndNode::start_with_options(Some(SERVER_LATENCY), PrintServerLogs::No, None, false);
+        ProxyAndNode::start_with_options(None, Some(SERVER_LATENCY), PrintServerLogs::No, None, false);
 
     // Spawn threads (with a slight delay between each)
     let mut child_threads = vec![];

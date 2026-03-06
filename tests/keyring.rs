@@ -19,8 +19,10 @@ fn multiple_keys() {
     let keyring_path = keyring_file.path().to_str().unwrap();
     println!("{:?}", keyring_path);
 
+    let password = init_keyring(keyring_path);
+
     for i in 0..3u64 {
-        add_a_key(keyring_path);
+        add_a_key(keyring_path, &password);
 
         let upload_url = format!("localhost:4444/upstream/victory_{}", i);
         let upload_path = format!(
@@ -29,13 +31,13 @@ fn multiple_keys() {
         );
         ensure_is_absent(&upload_path);
 
-        let _proxy_node_and_redis = ProxyAndNode::start_with_keyring_path(keyring_path);
+        let _proxy_node_and_redis = ProxyAndNode::start_with_keyring_path(keyring_path, &password);
         curl_put(COMPUTER_SVG_PATH, &upload_url);
 
-        assert_eq!(key_id(&upload_path), i);
+        assert_eq!(key_id(&upload_path), i + 1);
     }
 
-    let _proxy_node_and_redis = ProxyAndNode::start_with_keyring_path(keyring_path);
+    let _proxy_node_and_redis = ProxyAndNode::start_with_keyring_path(keyring_path, &password);
 
     for i in 0..3 {
         let download_url = format!("localhost:4444/upstream/victory_{}", i);

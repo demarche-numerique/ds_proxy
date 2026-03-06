@@ -37,20 +37,21 @@ pub struct ProxyAndNode {
 
 impl ProxyAndNode {
     pub fn start() -> ProxyAndNode {
-        ProxyAndNode::start_with_options(None, PrintServerLogs::No, None, false)
+        ProxyAndNode::start_with_options(None, None, PrintServerLogs::No, None, false)
     }
 
-    pub fn start_with_keyring_path(keyring_path: &str) -> ProxyAndNode {
-        ProxyAndNode::start_with_options(None, PrintServerLogs::No, Some(keyring_path), false)
+    pub fn start_with_keyring_path(keyring_path: &str, password: &str) -> ProxyAndNode {
+        ProxyAndNode::start_with_options(Some(password), None, PrintServerLogs::No, Some(keyring_path), false)
     }
 
     pub fn start_with_options(
+        password: Option<&str>,
         latency: Option<Duration>,
         log: PrintServerLogs,
         keyring_path: Option<&str>,
         enable_s3_signature_check: bool,
     ) -> ProxyAndNode {
-        let proxy = launch_proxy(log, keyring_path, enable_s3_signature_check);
+        let proxy = launch_proxy(log, keyring_path, password, enable_s3_signature_check);
         let node = launch_node_with_latency(latency, log);
         let redis = launch_redis(log);
         thread::sleep(time::Duration::from_secs(4));
@@ -79,12 +80,14 @@ pub fn launch_redis(log: PrintServerLogs) -> ChildGuard {
 pub fn launch_proxy(
     log: PrintServerLogs,
     keyring_path: Option<&str>,
+    password: Option<&str>,
     enable_s3_signature_check: bool,
 ) -> ChildGuard {
-    let keyring = if let Some(file) = keyring_path {
-        file
+
+    let (keyring, pass) = if let Some(file) = keyring_path {
+        (file, password.unwrap().to_string())
     } else {
-        DS_KEYRING
+        (DS_KEYRING, PASSWORD.to_string())
     };
 
     let mut command = Command::new(cargo::cargo_bin!("ds_proxy"));
@@ -96,7 +99,7 @@ pub fn launch_proxy(
         .arg("--s3-secret-key=secret")
         .arg("--s3-region=region")
         .env("DS_KEYRING", keyring)
-        .env("DS_PASSWORD", PASSWORD);
+        .env("DS_PASSWORD", pass);
 
     if !enable_s3_signature_check {
         command.arg("--bypass-s3-signature-check");
@@ -206,11 +209,22 @@ pub fn ensure_is_absent(file_path: &str) {
     }
 }
 
-pub fn add_a_key(keyring_path: &str) -> assert_cmd::assert::Assert {
+pub fn init_keyring(keyring_path: &str) -> String {
+    let output = Command::new(cargo::cargo_bin!("ds_proxy"))
+        .arg("init-keyring")
+        .env("DS_KEYRING", keyring_path)
+        .output()
+        .expect("failed to execute ds_proxy init-keyring");
+
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
+
+pub fn add_a_key(keyring_path: &str, password: &str) -> assert_cmd::assert::Assert {
     Command::new(cargo::cargo_bin!("ds_proxy"))
         .arg("add-key")
         .env("DS_KEYRING", keyring_path)
-        .env("DS_PASSWORD", PASSWORD)
+        .env("DS_PASSWORD", password)
         .assert()
         .success()
 }
