@@ -35,7 +35,9 @@ puis lancer le script `launch_demo.sh` qui compilera le proxy, le démarrera, et
 ## Installation
 
 - compiler le proxy pour la production: `cargo build --release`, le binaire se trouve à présent ici : `target/release/ds_proxy`
-- placer le binaire sur votre server et utiliser votre système habituel pour le superviser
+- placer le binaire sur votre server
+- initialiser le keyring `ds_proxy init-keyring --keyring-file keyring.toml` et conserver la clée
+- lancer le proxy en utilisant votre système habituel pour le superviser
 
 Exemple d'un fichier service minimal de supervision par systemd:
 
