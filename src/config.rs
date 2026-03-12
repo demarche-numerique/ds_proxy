@@ -3,6 +3,7 @@ use super::{args, keyring::Keyring, keyring_utils::load_keyring};
 use crate::redis_config::RedisConfig;
 use actix_web::HttpRequest;
 use aws_sdk_s3::config::Credentials;
+use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use std::env;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
@@ -12,6 +13,14 @@ use url::Url;
 // match nginx default (proxy_buffer_size in ngx_stream_proxy_module)
 pub const DEFAULT_CHUNK_SIZE: usize = 16 * 1024;
 pub const DEFAULT_LOCAL_ENCRYPTION_DIRECTORY: &str = "ds_proxy/local_encryption/";
+
+// RFC 3986 unreserved chars + / (percent_encoding crate lacks a PATH constant)
+const PATH_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'/')
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
 
 #[allow(clippy::large_enum_variant)]
 pub enum Config {
@@ -225,14 +234,16 @@ impl HttpConfig {
             return Some(self.upstream_base_url.to_string());
         }
 
-        // we does not use `get("name")` as it decodes percent-encoded characters
-        // but `join` does not re-encode all of them (`'` for example)
-        let upstream_path = req.uri().path().strip_prefix("/upstream/").unwrap();
-        log::debug!("Creating upstream url for : {}", upstream_path);
+        // get("name") decodes percent-encoded characters (including ..%2f → ../)
+        // re-encode to prevent bypasses and ensure consistent encoding
+        let name = req.match_info().get("name").unwrap();
+        log::debug!("Creating upstream url for: {}", name);
 
-        // Warning: join process '../'
+        let encoded = utf8_percent_encode(name, PATH_ENCODE_SET).to_string();
+
+        // Warning: join processes '../'
         // "https://a.com/jail/".join('../escape') => "https://a.com/escape"
-        let mut url = self.upstream_base_url.join(upstream_path).unwrap();
+        let mut url = self.upstream_base_url.join(&encoded).unwrap();
 
         log::debug!("Created upstream url: {}", url);
 
