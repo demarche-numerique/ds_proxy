@@ -38,6 +38,7 @@ http = "*"
 sha256 = "*"
 data-encoding = "*"
 openssl = "*"
+percent-encoding = "*"
 md-5 = "*"
 sha2 = "*"
 aws-config = { version = "*", features = ["behavior-version-latest"] }

@@ -1515,6 +1515,7 @@ dependencies = [
  "log",
  "md-5",
  "openssl",
+ "percent-encoding",
  "proptest",
  "rand 0.10.0",
  "ring",
