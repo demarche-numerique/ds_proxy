@@ -182,4 +182,71 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 302);
     }
+
+    #[actix_web::test]
+    #[serial(servers)]
+    async fn test_ensure_write_once_bypass_via_query_param_reordering() {
+        let _redis_process = launch_redis_with_delay();
+
+        let config = RedisConfig {
+            url: Url::parse("redis://127.0.0.1:5555").unwrap(),
+            ..RedisConfig::default()
+        };
+        let redis_pool = configure_redis_pool(config).await;
+
+        let mut actix_app = App::new().service(
+            resource("/test-bypass-path")
+                .guard(Get())
+                .wrap(from_fn(ensure_write_once))
+                .to(mock_success),
+        );
+
+        log::info!("Redis pool available.");
+
+        actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool.clone())));
+
+        // Clean both possible keys
+        match redis_pool.get().await {
+            Ok(mut conn) => {
+                let _: () = conn
+                    .del(WriteOnceService::hash_key(
+                        "/test-bypass-path?temp_url_expires=1234567890&a=1",
+                    ))
+                    .await
+                    .unwrap();
+                let _: () = conn
+                    .del(WriteOnceService::hash_key(
+                        "/test-bypass-path?a=1&temp_url_expires=1234567890",
+                    ))
+                    .await
+                    .unwrap();
+            }
+            Err(_err) => panic!("Failed to get Redis connection"),
+        }
+
+        let app = test::init_service(actix_app).await;
+
+        // First request with params in order: temp_url_expires, then a
+        let req = test::TestRequest::get()
+            .uri("/test-bypass-path?temp_url_expires=1234567890&a=1")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        // Second request with params reordered: a, then temp_url_expires
+        // This SHOULD be blocked (403) but currently passes (200) - demonstrating the vulnerability
+        let req = test::TestRequest::get()
+            .uri("/test-bypass-path?a=1&temp_url_expires=1234567890")
+            .to_request();
+        let resp2 = test::try_call_service(&app, req).await;
+        match resp2 {
+            Ok(resp) => panic!(
+                "VULNERABILITY CONFIRMED: Query param reordering bypassed write-once protection. Expected 403, got {}",
+                resp.status()
+            ),
+            Err(err) => {
+                assert_eq!(err.error_response().status(), 403);
+            }
+        }
+    }
 }
