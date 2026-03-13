@@ -20,14 +20,8 @@ impl WriteOnceService {
     }
 
     pub fn hash_key(uri: &str) -> String {
-        let canonical_uri = if let Some((path, query)) = uri.split_once('?') {
-            let mut params: Vec<&str> = query.split('&').collect();
-            params.sort();
-            format!("{}?{}", path, params.join("&"))
-        } else {
-            uri.to_string()
-        };
-        format!("locks:{:x}", Sha256::digest(canonical_uri.as_bytes()))
+        let path = uri.split_once('?').map_or(uri, |(path, _)| path);
+        format!("locks:{:x}", Sha256::digest(path.as_bytes()))
     }
     pub async fn lock(&self, uri: &str) -> Result<bool, String> {
         let key = Self::hash_key(uri);
