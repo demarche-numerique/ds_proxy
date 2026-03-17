@@ -232,7 +232,10 @@ impl HttpConfig {
 
         // Warning: join process '../'
         // "https://a.com/jail/".join('../escape') => "https://a.com/escape"
-        let mut url = self.upstream_base_url.join(upstream_path).unwrap();
+        let mut url = match self.upstream_base_url.join(upstream_path) {
+            Ok(url) => url,
+            Err(_) => return None,
+        };
 
         log::debug!("Created upstream url: {}", url);
 
