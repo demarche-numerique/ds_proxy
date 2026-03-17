@@ -261,9 +261,11 @@ impl HttpConfig {
     }
 
     fn is_traversal_attack(&self, url: &Url) -> bool {
-        // check that the host (and port) haven't changed
+        // check that scheme, host and port haven't changed
         // this prevents protocol-relative URL attacks (e.g. "//evil.com/secret")
-        if url.host() != self.upstream_base_url.host()
+        // and scheme downgrade attacks (e.g. "http://upstream.com/secret")
+        if url.scheme() != self.upstream_base_url.scheme()
+            || url.host() != self.upstream_base_url.host()
             || url.port() != self.upstream_base_url.port()
         {
             return true;
@@ -436,6 +438,22 @@ mod tests {
             config.create_upstream_url(&testing_encoding),
             Some("https://upstream.com/plop%20plop%27plop.png".to_string())
         );
+
+        // scheme downgrade attack: http:// instead of https://
+        let scheme_downgrade = TestRequest::default()
+            .uri("https://proxy.com/upstream/http://upstream.com/secret")
+            .param("name", "secret")
+            .to_http_request();
+
+        assert_eq!(config.create_upstream_url(&scheme_downgrade), None);
+
+        // absolute URL injection with same host but different scheme
+        let ftp_scheme = TestRequest::default()
+            .uri("https://proxy.com/upstream/ftp://upstream.com/secret")
+            .param("name", "secret")
+            .to_http_request();
+
+        assert_eq!(config.create_upstream_url(&ftp_scheme), None);
     }
 
     fn default_config(upstream_base_url: &str) -> HttpConfig {
