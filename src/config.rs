@@ -428,6 +428,50 @@ mod tests {
         );
     }
 
+    // KC: Url::join with scheme-relative input replaces the host (RFC 3986 §4.2).
+    // This is an SSRF vector: the proxy would contact an attacker-controlled host.
+    // Currently, actix's match_info() strips one /, masking the issue by accident.
+    // There is NO explicit rejection of this pattern — no 400, no host validation.
+    #[test]
+    fn test_ssrf_url_join_replaces_host_with_scheme_relative_input() {
+        // Proof that Url::join is vulnerable to scheme-relative SSRF
+        let base = Url::parse("https://upstream.com/jail/cell/").unwrap();
+        let ssrf = base.join("//evil.com:8080/secret").unwrap();
+        assert_eq!(
+            ssrf.host_str().unwrap(),
+            "evil.com",
+            "Url::join MUST replace host with scheme-relative input — this is the SSRF vector"
+        );
+        assert_eq!(ssrf.to_string(), "https://evil.com:8080/secret");
+    }
+
+    // KC: create_upstream_url does not explicitly reject scheme-relative patterns.
+    // Actix happens to consume one / (//evil → /evil in match_info), so the host
+    // is preserved by accident. But there is no guard, no 400, no validation.
+    // This test documents that the protection is ABSENT — it relies on actix routing behavior.
+    #[test]
+    fn test_ssrf_create_upstream_url_has_no_explicit_protection() {
+        let config = default_config("https://upstream.com/");
+
+        // Simulate what actix gives us: //evil.com → /evil.com (one / consumed)
+        let req = TestRequest::default()
+            .uri("https://proxy.com/upstream///evil.com:8080/secret")
+            .param("name", "/evil.com:8080/secret")
+            .to_http_request();
+
+        let url = config.create_upstream_url(&req);
+
+        // The URL is produced (not rejected) — no explicit SSRF protection
+        assert!(
+            url.is_some(),
+            "SSRF pattern was not explicitly rejected — create_upstream_url returned a URL"
+        );
+
+        // Host happens to be preserved because actix ate one /, but this is
+        // accidental — if the raw path "//evil.com" reached join() directly,
+        // the host would be replaced (see test above)
+    }
+
     fn default_config(upstream_base_url: &str) -> HttpConfig {
         let keyring = Keyring::new(HashMap::new());
 
