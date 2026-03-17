@@ -258,6 +258,14 @@ impl HttpConfig {
     }
 
     fn is_traversal_attack(&self, url: &Url) -> bool {
+        // check that the host (and port) haven't changed
+        // this prevents protocol-relative URL attacks (e.g. "//evil.com/secret")
+        if url.host() != self.upstream_base_url.host()
+            || url.port() != self.upstream_base_url.port()
+        {
+            return true;
+        }
+
         // https://upstream.com => [Some("")]
         // https://upstream.com/jail/cell/ => [Some("jail"), Some("cell"), Some("")]
         let mut base_segments: Vec<&str> =
