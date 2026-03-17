@@ -11,12 +11,6 @@ pub async fn fetch(
 ) -> Result<HttpResponse, Error> {
     let get_url = config.create_upstream_url(&req);
 
-    if get_url.is_none() {
-        return not_found();
-    }
-
-    let get_url = get_url.unwrap();
-
     let mut fetch_req = client
         .request_from(get_url.clone(), req.head())
         .force_close();

@@ -58,7 +58,9 @@ pub async fn main(config: HttpConfig) -> std::io::Result<()> {
                 }
                 .service(resource("{name}*").to(simple_proxy));
 
-                scope.wrap(from_fn(verify_s3_signature))
+                scope
+                    .wrap(from_fn(verify_s3_signature))
+                    .wrap(from_fn(reject_path_traversal))
             })
             .service(
                 scope("/local")

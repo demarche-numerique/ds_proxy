@@ -229,9 +229,9 @@ fn normalize_and_parse_upstream_url(mut url: String) -> Url {
 }
 
 impl HttpConfig {
-    pub fn create_upstream_url(&self, req: &HttpRequest) -> Option<String> {
+    pub fn create_upstream_url(&self, req: &HttpRequest) -> String {
         if req.match_info().get("name").is_none() {
-            return Some(self.upstream_base_url.to_string());
+            return self.upstream_base_url.to_string();
         }
 
         // get("name") decodes percent-encoded characters (including ..%2f → ../)
@@ -241,21 +241,15 @@ impl HttpConfig {
 
         let encoded = utf8_percent_encode(name, PATH_ENCODE_SET).to_string();
 
-        // Warning: join processes '../'
-        // "https://a.com/jail/".join('../escape') => "https://a.com/escape"
         let mut url = self.upstream_base_url.join(&encoded).unwrap();
 
         log::debug!("Created upstream url: {}", url);
-
-        if self.is_traversal_attack(&url) {
-            return None;
-        }
 
         if !req.query_string().is_empty() {
             url.set_query(Some(req.query_string()));
         }
 
-        Some(url.to_string())
+        url.to_string()
     }
 
     pub fn local_encryption_path_for(&self, req: &HttpRequest) -> Option<PathBuf> {
@@ -266,27 +260,6 @@ impl HttpConfig {
         filepath.push(safe_name);
 
         Some(filepath)
-    }
-
-    fn is_traversal_attack(&self, url: &Url) -> bool {
-        // https://upstream.com => [Some("")]
-        // https://upstream.com/jail/cell/ => [Some("jail"), Some("cell"), Some("")]
-        let mut base_segments: Vec<&str> =
-            self.upstream_base_url.path_segments().unwrap().collect();
-
-        // remove the last segment corresponding to "/"
-        base_segments.pop();
-
-        let mut url_segments = url.path_segments().unwrap();
-
-        // ensure that all segment of the upstream_base_url
-        // are present in the final url
-        let safe = base_segments.iter().all(|base_segment| {
-            let url_segment = url_segments.next().unwrap();
-            base_segment == &url_segment
-        });
-
-        !safe
     }
 }
 
@@ -360,12 +333,12 @@ mod tests {
 
         assert_eq!(
             config.create_upstream_url(&file),
-            Some("https://upstream.com/file".to_string())
+            "https://upstream.com/file"
         );
 
         assert_eq!(
             jailed_config.create_upstream_url(&file),
-            Some("https://upstream.com/jail/cell/file".to_string())
+            "https://upstream.com/jail/cell/file"
         );
 
         let sub_dir_file = TestRequest::default()
@@ -375,14 +348,18 @@ mod tests {
 
         assert_eq!(
             config.create_upstream_url(&sub_dir_file),
-            Some("https://upstream.com/sub/dir/file".to_string())
+            "https://upstream.com/sub/dir/file"
         );
 
         assert_eq!(
             jailed_config.create_upstream_url(&sub_dir_file),
-            Some("https://upstream.com/jail/cell/sub/dir/file".to_string())
+            "https://upstream.com/jail/cell/sub/dir/file"
         );
 
+        // Path traversal is now blocked by the reject_path_traversal middleware
+        // before reaching create_upstream_url. Without the middleware guard,
+        // Url::join("../escape") navigates up — but the middleware prevents this
+        // from ever being reached with a malicious path.
         let path_traversal_file = TestRequest::default()
             .uri("https://proxy.com/upstream/../escape")
             .param("name", "../escape")
@@ -390,12 +367,13 @@ mod tests {
 
         assert_eq!(
             config.create_upstream_url(&path_traversal_file),
-            Some("https://upstream.com/escape".to_string())
+            "https://upstream.com/escape"
         );
 
+        // Without middleware, jailed config would allow escape — middleware blocks it
         assert_eq!(
             jailed_config.create_upstream_url(&path_traversal_file),
-            None
+            "https://upstream.com/jail/escape"
         );
 
         let file_with_query_string = TestRequest::default()
@@ -405,17 +383,14 @@ mod tests {
 
         assert_eq!(
             config.create_upstream_url(&file_with_query_string),
-            Some("https://upstream.com/bucket/file.zip?p1=ok1&p2=ok2".to_string())
+            "https://upstream.com/bucket/file.zip?p1=ok1&p2=ok2"
         );
 
         let file = TestRequest::default()
             .uri("https://proxy.com/upstream")
             .to_http_request();
 
-        assert_eq!(
-            config.create_upstream_url(&file),
-            Some("https://upstream.com/".to_string())
-        );
+        assert_eq!(config.create_upstream_url(&file), "https://upstream.com/");
 
         let testing_encoding = TestRequest::default()
             .uri("https://proxy.com/upstream/plop%20plop%27plop.png")
@@ -424,7 +399,7 @@ mod tests {
 
         assert_eq!(
             config.create_upstream_url(&testing_encoding),
-            Some("https://upstream.com/plop%20plop%27plop.png".to_string())
+            "https://upstream.com/plop%20plop%27plop.png"
         );
     }
 
@@ -445,12 +420,12 @@ mod tests {
         assert_eq!(ssrf.to_string(), "https://evil.com:8080/secret");
     }
 
-    // KC: create_upstream_url does not explicitly reject scheme-relative patterns.
-    // Actix happens to consume one / (//evil → /evil in match_info), so the host
-    // is preserved by accident. But there is no guard, no 400, no validation.
-    // This test documents that the protection is ABSENT — it relies on actix routing behavior.
+    // KC: SSRF via scheme-relative URL is now blocked by reject_path_traversal middleware
+    // which rejects consecutive slashes before the request reaches create_upstream_url.
+    // This test documents that create_upstream_url itself does not reject SSRF —
+    // it relies on the middleware for protection.
     #[test]
-    fn test_ssrf_create_upstream_url_has_no_explicit_protection() {
+    fn test_ssrf_create_upstream_url_relies_on_middleware() {
         let config = default_config("https://upstream.com/");
 
         // Simulate what actix gives us: //evil.com → /evil.com (one / consumed)
@@ -461,15 +436,11 @@ mod tests {
 
         let url = config.create_upstream_url(&req);
 
-        // The URL is produced (not rejected) — no explicit SSRF protection
+        // The URL is produced (not rejected) — SSRF protection is in the middleware
         assert!(
-            url.is_some(),
-            "SSRF pattern was not explicitly rejected — create_upstream_url returned a URL"
+            !url.is_empty(),
+            "create_upstream_url produces a URL — SSRF protection is in the middleware layer"
         );
-
-        // Host happens to be preserved because actix ate one /, but this is
-        // accidental — if the raw path "//evil.com" reached join() directly,
-        // the host would be replaced (see test above)
     }
 
     fn default_config(upstream_base_url: &str) -> HttpConfig {

@@ -39,11 +39,3 @@ pub static FETCH_REQUEST_HEADERS_TO_REMOVE: [header::HeaderName; 2] = [
     header::CONNECTION,
     header::RANGE,
 ];
-
-pub fn not_found() -> Result<HttpResponse, Error> {
-    let response = HttpResponse::NotFound()
-        .insert_header((header::CONTENT_TYPE, "application/json"))
-        .body("{}");
-
-    Ok(response)
-}

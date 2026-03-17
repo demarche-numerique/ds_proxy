@@ -36,9 +36,7 @@ pub async fn forward(
     client: web::Data<Client>,
     config: web::Data<HttpConfig>,
 ) -> Result<HttpResponse, Error> {
-    let Some(put_url) = config.create_upstream_url(&req) else {
-        return not_found();
-    };
+    let put_url = config.create_upstream_url(&req);
 
     let mut forwarded_req = client
         .request_from(put_url.clone(), req.head())
