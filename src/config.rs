@@ -357,6 +357,16 @@ mod tests {
             Some("https://upstream.com/jail/cell/file".to_string())
         );
 
+        let file2 = TestRequest::default()
+            .uri("https://proxy.com/upstream///127.0.0.1:55053/secret")
+            .param("name", "secret")
+            .to_http_request();
+
+        assert_eq!(
+            config.create_upstream_url(&file2),
+            None
+        );
+
         let sub_dir_file = TestRequest::default()
             .uri("https://proxy.com/upstream/sub/dir/file")
             .param("name", "sub/dir/file")
