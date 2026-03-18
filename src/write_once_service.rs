@@ -19,12 +19,11 @@ impl WriteOnceService {
         WriteOnceService { pool }
     }
 
-    pub fn hash_key(uri: &str) -> String {
-        let path = uri.split_once('?').map_or(uri, |(path, _)| path);
+    pub fn hash_key(path: &str) -> String {
         format!("locks:{:x}", Sha256::digest(path.as_bytes()))
     }
-    pub async fn lock(&self, uri: &str) -> Result<bool, String> {
-        let key = Self::hash_key(uri);
+    pub async fn lock(&self, path: &str) -> Result<bool, String> {
+        let key = Self::hash_key(path);
         let mut conn = self.get_redis_connection().await?;
 
         let result: Option<String> = cmd("SET")
@@ -41,10 +40,10 @@ impl WriteOnceService {
         Ok(!already_exists)
     }
 
-    pub async fn unlock(&self, uri: &str) -> Result<(), String> {
+    pub async fn unlock(&self, path: &str) -> Result<(), String> {
         self.get_redis_connection()
             .await?
-            .del(Self::hash_key(uri))
+            .del(Self::hash_key(path))
             .await
             .map_err(|e| e.to_string())
     }
