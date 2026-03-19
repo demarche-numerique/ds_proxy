@@ -79,7 +79,7 @@ fn upload_and_download() {
 #[serial(servers)]
 fn check_s3_signature() {
     let _proxy_node_and_redis =
-        ProxyAndNode::start_with_options(None, PrintServerLogs::No, None, true);
+        ProxyAndNode::start_with_options(None, None, PrintServerLogs::No, None, true);
 
     let put = curl_put(COMPUTER_SVG_PATH, "localhost:4444/upstream/victory");
     assert_eq!(put.status.success(), true);

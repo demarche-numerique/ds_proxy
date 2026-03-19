@@ -6,7 +6,7 @@ extern crate log;
 use docopt::Docopt;
 use ds_proxy::args::{Args, USAGE};
 use ds_proxy::config::{Config, Config::*};
-use ds_proxy::keyring_utils::add_random_key_to_keyring;
+use ds_proxy::keyring_utils::{add_random_key_to_keyring, init_keyring, rotate_password};
 use ds_proxy::{file, http};
 use log::info;
 use std::env;
@@ -33,6 +33,16 @@ fn main() {
         Encrypt(config) => file::encrypt(config),
         Decrypt(config) => file::decrypt(config),
         AddKeyConfig(config) => add_random_key_to_keyring(&config.keyring_file, config.password),
+        RotatePassword(config) => {
+            let new_password = rotate_password(&config.keyring_file, config.password);
+            eprintln!("rotation done, new password:");
+            println!("{}", new_password);
+        }
+        InitKeyring(config) => {
+            let password = init_keyring(&config.keyring_file);
+            eprintln!("keyring initialized with the following password:");
+            println!("{}", password);
+        }
         Http(config) => http::main(config).unwrap(),
     }
 }

@@ -9,7 +9,6 @@ fi
 
 : "${DS_PROXY_ADDRESS:=127.0.0.1:4444}"
 
-PASSWORD='a good password'
 KEYRING_FILE=/tmp/keyring.toml
 
 DS_PROXY_LOG=/tmp/ds_proxy_log
@@ -22,8 +21,11 @@ cargo build --release
 echo 'building simple node server which mimics a backend storage'
 npm clean-install --ignore-scripts --prefix tests/fixtures/server-static
 
-echo 'building keyring file'
-./target/release/ds_proxy add-key --password-file <(echo -n "$PASSWORD") --keyring-file "$KEYRING_FILE"
+echo "initializing the keyring file: $KEYRING_FILE"
+PASSWORD=$(./target/release/ds_proxy init-keyring --keyring-file "$KEYRING_FILE" 2>/dev/null)
+
+echo "master password: $PASSWORD"
+echo
 
 if [ "$1" = "s3" ]; then
   echo 'launching ds_proxy in s3 mode listenning on real s3 backend'
