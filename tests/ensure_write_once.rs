@@ -39,7 +39,7 @@ mod tests {
 
     #[actix_web::test]
     #[serial(servers)]
-    async fn test_ensure_write_once_with_user_facing_uri_with_success() {
+    async fn test_ensure_write_once_blocks_same_path_regardless_of_query_params() {
         let _redis_process = launch_redis_with_delay();
 
         let config = RedisConfig {
@@ -49,53 +49,53 @@ mod tests {
         let redis_pool = configure_redis_pool(config).await;
 
         let mut actix_app = App::new().service(
-            resource("/test-success-path")
+            resource("/test-path")
                 .guard(Get())
                 .wrap(from_fn(ensure_write_once))
                 .to(mock_success),
         );
 
-        log::info!("Redis pool available.");
-
         actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool.clone())));
 
-        // on clean la clé
         match redis_pool.get().await {
-            Ok(mut conn) => conn
-                .del(WriteOnceService::hash_key("/test-success-path"))
-                .await
-                .unwrap(),
+            Ok(mut conn) => {
+                let _: () = conn
+                    .del(WriteOnceService::hash_key("/test-path"))
+                    .await
+                    .unwrap();
+            }
             Err(_err) => panic!("Failed to get Redis connection"),
         }
 
         let app = test::init_service(actix_app).await;
 
-        // Effectue une première requête (devrait passer, et de maniere sous-jacente, écrire dans Redis)
+        // First request: should pass and lock the path
         let req = test::TestRequest::get()
-            .uri("/test-success-path?temp_url_expires=1234567890")
+            .uri("/test-path?temp_url_expires=1234567890&a=1")
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
 
-        // Effectue une seconde requête (devrait être refusée)
-        let req = test::TestRequest::get()
-            .uri("/test-success-path?temp_url_expires=1234567890")
-            .to_request();
-        let resp2 = test::try_call_service(&app, req).await;
-        match resp2 {
-            Ok(resp) => panic!(
-                "Expected an error, but got a response, status: {}",
-                resp.status()
-            ),
-            Err(err) => {
-                assert_eq!(err.error_response().status(), 403);
+        let bypass_attempts = [
+            "/test-path?temp_url_expires=1234567890&a=1", // identical
+            "/test-path?a=1&temp_url_expires=1234567890", // reordered
+            "/test-path?temp_url_expires=1234567890&toto=plop1", // extra param
+            "/test-path?temp_url_expires=9999999999",     // different values
+        ];
+
+        for uri in bypass_attempts {
+            let req = test::TestRequest::get().uri(uri).to_request();
+            let resp = test::try_call_service(&app, req).await;
+            match resp {
+                Ok(resp) => panic!("Expected 403 for {}, got {}", uri, resp.status()),
+                Err(err) => assert_eq!(err.error_response().status(), 403),
             }
         }
     }
 
     #[actix_web::test]
     #[serial(servers)]
-    async fn test_ensure_write_once_with_private_uri() {
+    async fn test_ensure_write_once_skips_private_uri() {
         let _redis_process = launch_redis_with_delay();
 
         let config = RedisConfig {
@@ -105,45 +105,37 @@ mod tests {
         let redis_pool = configure_redis_pool(config).await;
 
         let mut actix_app = App::new().service(
-            resource("/test-success-path")
+            resource("/test-path")
                 .guard(Get())
                 .wrap(from_fn(ensure_write_once))
                 .to(mock_success),
         );
 
-        log::info!("Redis pool available.");
-
         actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool.clone())));
 
-        // on clean la clé
         match redis_pool.get().await {
-            Ok(mut conn) => conn
-                .del(WriteOnceService::hash_key("/test-success-path"))
-                .await
-                .unwrap(),
+            Ok(mut conn) => {
+                let _: () = conn
+                    .del(WriteOnceService::hash_key("/test-path"))
+                    .await
+                    .unwrap();
+            }
             Err(_err) => panic!("Failed to get Redis connection"),
         }
 
         let app = test::init_service(actix_app).await;
 
-        // Effectue une première requête (devrait passer outre le write_once)
-        let req = test::TestRequest::get()
-            .uri("/test-success-path")
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 200);
-
-        // Effectue une seconde requête (devrait passer aussi)
-        let req = test::TestRequest::get()
-            .uri("/test-success-path")
-            .to_request();
-        let resp2 = test::call_service(&app, req).await;
-        assert_eq!(resp2.status(), 200);
+        // Private URIs (no temp_url_expires) bypass write_once entirely
+        for _ in 0..2 {
+            let req = test::TestRequest::get().uri("/test-path").to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), 200);
+        }
     }
 
     #[actix_web::test]
     #[serial(servers)]
-    async fn test_ensure_write_once_with_found() {
+    async fn test_ensure_write_once_unlocks_on_non_success_response() {
         let _redis_process = launch_redis_with_delay();
         let config = RedisConfig {
             url: Url::parse("redis://127.0.0.1:5555").unwrap(),
@@ -151,35 +143,24 @@ mod tests {
         };
         let redis_pool = configure_redis_pool(config).await;
 
-        // Prépare une application Actix Web avec le middleware
-        let mut actix_app = App::new()
-            .service(
-                resource("/test-success-path")
-                    .guard(Get())
-                    .wrap(from_fn(ensure_write_once))
-                    .to(mock_success),
-            )
-            .service(
-                resource("/test-not-success-path")
-                    .guard(Get())
-                    .wrap(from_fn(ensure_write_once))
-                    .to(mock_found),
-            );
+        let mut actix_app = App::new().service(
+            resource("/test-not-success-path")
+                .guard(Get())
+                .wrap(from_fn(ensure_write_once))
+                .to(mock_found),
+        );
 
         actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool)));
 
         let app = test::init_service(actix_app).await;
 
-        let req = test::TestRequest::get()
-            .uri("/test-not-success-path?temp_url_expires=1234567890")
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 302);
-
-        let req = test::TestRequest::get()
-            .uri("/test-not-success-path?temp_url_expires=1234567890")
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), 302);
+        // Non-success responses (302) should not consume the write-once token
+        for _ in 0..2 {
+            let req = test::TestRequest::get()
+                .uri("/test-not-success-path?temp_url_expires=1234567890")
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), 302);
+        }
     }
 }
