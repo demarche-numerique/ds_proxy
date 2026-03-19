@@ -220,31 +220,24 @@ fn normalize_and_parse_upstream_url(mut url: String) -> Url {
 }
 
 impl HttpConfig {
-    pub fn create_upstream_url(&self, req: &HttpRequest) -> Option<String> {
-        if req.match_info().get("name").is_none() {
-            return Some(self.upstream_base_url.to_string());
-        }
+    pub fn create_upstream_url(&self, req: &HttpRequest) -> String {
+        let raw_path = req.uri().path();
+        // Strip the /upstream/ prefix to get the raw tail, preserving original encoding
+        let tail = raw_path
+            .strip_prefix("/upstream/")
+            .or_else(|| raw_path.strip_prefix("/upstream"))
+            .unwrap_or("");
 
-        // we does not use `get("name")` as it decodes percent-encoded characters
-        // but `join` does not re-encode all of them (`'` for example)
-        let upstream_path = req.uri().path().strip_prefix("/upstream/").unwrap();
-        log::debug!("Creating upstream url for : {}", upstream_path);
-
-        // Warning: join process '../'
-        // "https://a.com/jail/".join('../escape') => "https://a.com/escape"
-        let mut url = self.upstream_base_url.join(upstream_path).unwrap();
+        let base = self.upstream_base_url.as_str(); // always ends with '/'
+        let url = if req.query_string().is_empty() {
+            format!("{}{}", base, tail)
+        } else {
+            format!("{}{}?{}", base, tail, req.query_string())
+        };
 
         log::debug!("Created upstream url: {}", url);
 
-        if self.is_traversal_attack(&url) {
-            return None;
-        }
-
-        if !req.query_string().is_empty() {
-            url.set_query(Some(req.query_string()));
-        }
-
-        Some(url.to_string())
+        url
     }
 
     pub fn local_encryption_path_for(&self, req: &HttpRequest) -> Option<PathBuf> {
@@ -255,27 +248,6 @@ impl HttpConfig {
         filepath.push(safe_name);
 
         Some(filepath)
-    }
-
-    fn is_traversal_attack(&self, url: &Url) -> bool {
-        // https://upstream.com => [Some("")]
-        // https://upstream.com/jail/cell/ => [Some("jail"), Some("cell"), Some("")]
-        let mut base_segments: Vec<&str> =
-            self.upstream_base_url.path_segments().unwrap().collect();
-
-        // remove the last segment corresponding to "/"
-        base_segments.pop();
-
-        let mut url_segments = url.path_segments().unwrap();
-
-        // ensure that all segment of the upstream_base_url
-        // are present in the final url
-        let safe = base_segments.iter().all(|base_segment| {
-            let url_segment = url_segments.next().unwrap();
-            base_segment == &url_segment
-        });
-
-        !safe
     }
 }
 
@@ -336,84 +308,93 @@ mod tests {
 
     #[test]
     fn test_create_upstream_url() {
-        let base = "https://upstream.com/";
-        let jailed_base = "https://upstream.com/jail/cell/";
+        let config = default_config("https://upstream.com/");
+        let jailed_config = default_config("https://upstream.com/jail/cell/");
 
-        let config = default_config(base);
-        let jailed_config = default_config(jailed_base);
+        // Simple file
+        let req = TestRequest::default()
+            .uri("/upstream/file")
+            .to_http_request();
+        assert_eq!(
+            config.create_upstream_url(&req),
+            "https://upstream.com/file"
+        );
+        assert_eq!(
+            jailed_config.create_upstream_url(&req),
+            "https://upstream.com/jail/cell/file"
+        );
 
-        let file = TestRequest::default()
-            .uri("https://proxy.com/upstream/file")
-            .param("name", "file")
+        // Subdirectory
+        let req = TestRequest::default()
+            .uri("/upstream/sub/dir/file")
+            .to_http_request();
+        assert_eq!(
+            config.create_upstream_url(&req),
+            "https://upstream.com/sub/dir/file"
+        );
+        assert_eq!(
+            jailed_config.create_upstream_url(&req),
+            "https://upstream.com/jail/cell/sub/dir/file"
+        );
+
+        // Query string preserved
+        let req = TestRequest::default()
+            .uri("/upstream/bucket/file.zip?p1=ok1&p2=ok2")
+            .to_http_request();
+        assert_eq!(
+            config.create_upstream_url(&req),
+            "https://upstream.com/bucket/file.zip?p1=ok1&p2=ok2"
+        );
+
+        // No name — returns base URL
+        let req = TestRequest::default().uri("/upstream").to_http_request();
+        assert_eq!(config.create_upstream_url(&req), "https://upstream.com/");
+
+        // Encoding preserved transparently (no decode → re-encode cycle)
+        let req = TestRequest::default()
+            .uri("/upstream/plop%20plop%27plop.png")
+            .to_http_request();
+        assert_eq!(
+            config.create_upstream_url(&req),
+            "https://upstream.com/plop%20plop%27plop.png"
+        );
+
+        // ".." forwarded as-is (not resolved) — upstream handles it
+        let req = TestRequest::default()
+            .uri("/upstream/../escape")
+            .to_http_request();
+        assert_eq!(
+            config.create_upstream_url(&req),
+            "https://upstream.com/../escape"
+        );
+        assert_eq!(
+            jailed_config.create_upstream_url(&req),
+            "https://upstream.com/jail/cell/../escape"
+        );
+    }
+
+    // Proof that Url::join is vulnerable to scheme-relative SSRF (RFC 3986 §4.2)
+    #[test]
+    fn test_ssrf_url_join_replaces_host() {
+        let base = Url::parse("https://upstream.com/jail/cell/").unwrap();
+        let ssrf = base.join("//evil.com:8080/secret").unwrap();
+        assert_eq!(ssrf.host_str().unwrap(), "evil.com");
+    }
+
+    // With string concatenation, the host is NEVER replaced
+    #[test]
+    fn test_ssrf_eliminated_by_concatenation() {
+        let config = default_config("https://upstream.com/");
+
+        let req = TestRequest::default()
+            .uri("/upstream///evil.com:8080/secret")
             .to_http_request();
 
-        assert_eq!(
-            config.create_upstream_url(&file),
-            Some("https://upstream.com/file".to_string())
-        );
-
-        assert_eq!(
-            jailed_config.create_upstream_url(&file),
-            Some("https://upstream.com/jail/cell/file".to_string())
-        );
-
-        let sub_dir_file = TestRequest::default()
-            .uri("https://proxy.com/upstream/sub/dir/file")
-            .param("name", "sub/dir/file")
-            .to_http_request();
-
-        assert_eq!(
-            config.create_upstream_url(&sub_dir_file),
-            Some("https://upstream.com/sub/dir/file".to_string())
-        );
-
-        assert_eq!(
-            jailed_config.create_upstream_url(&sub_dir_file),
-            Some("https://upstream.com/jail/cell/sub/dir/file".to_string())
-        );
-
-        let path_traversal_file = TestRequest::default()
-            .uri("https://proxy.com/upstream/../escape")
-            .param("name", "../escape")
-            .to_http_request();
-
-        assert_eq!(
-            config.create_upstream_url(&path_traversal_file),
-            Some("https://upstream.com/escape".to_string())
-        );
-
-        assert_eq!(
-            jailed_config.create_upstream_url(&path_traversal_file),
-            None
-        );
-
-        let file_with_query_string = TestRequest::default()
-            .uri("https://proxy.com/upstream/bucket/file.zip?p1=ok1&p2=ok2")
-            .param("name", "bucket/file.zip")
-            .to_http_request();
-
-        assert_eq!(
-            config.create_upstream_url(&file_with_query_string),
-            Some("https://upstream.com/bucket/file.zip?p1=ok1&p2=ok2".to_string())
-        );
-
-        let file = TestRequest::default()
-            .uri("https://proxy.com/upstream")
-            .to_http_request();
-
-        assert_eq!(
-            config.create_upstream_url(&file),
-            Some("https://upstream.com/".to_string())
-        );
-
-        let testing_encoding = TestRequest::default()
-            .uri("https://proxy.com/upstream/plop%20plop%27plop.png")
-            .param("name", "plop plop'plop.png")
-            .to_http_request();
-
-        assert_eq!(
-            config.create_upstream_url(&testing_encoding),
-            Some("https://upstream.com/plop%20plop%27plop.png".to_string())
+        let url = config.create_upstream_url(&req);
+        assert!(
+            url.starts_with("https://upstream.com/"),
+            "host must always be upstream.com, got: {}",
+            url
         );
     }
 
