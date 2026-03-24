@@ -8,6 +8,24 @@ fn main() {
         .args(["rev-parse", "HEAD"])
         .output()
         .unwrap();
-    let git_hash = String::from_utf8(output.stdout).unwrap();
-    println!("cargo:rustc-env=GIT_HASH={}", git_hash);
+    let git_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
+
+    let tag = Command::new("git")
+        .args(["describe", "--tags", "--exact-match", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8(o.stdout).unwrap().trim().to_string())
+            } else {
+                None
+            }
+        });
+
+    let version = match tag {
+        Some(t) => format!("{} {}", t, git_hash),
+        None => git_hash,
+    };
+
+    println!("cargo:rustc-env=GIT_HASH={}", version);
 }
