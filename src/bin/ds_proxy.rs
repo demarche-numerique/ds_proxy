@@ -10,6 +10,7 @@ use ds_proxy::keyring_utils::{add_random_key_to_keyring, init_keyring, rotate_pa
 use ds_proxy::{file, http};
 use log::info;
 use std::env;
+use std::io::IsTerminal;
 
 fn main() {
     env_logger::init();
@@ -35,13 +36,21 @@ fn main() {
         AddKeyConfig(config) => add_random_key_to_keyring(&config.keyring_file, config.password),
         RotatePassword(config) => {
             let new_password = rotate_password(&config.keyring_file, config.password);
-            eprintln!("rotation done, new password:");
-            println!("{}", new_password);
+            if std::io::stdout().is_terminal() {
+                eprintln!("rotation done, new password:");
+                println!("{}", new_password);
+            } else {
+                print!("{}", new_password);
+            }
         }
         InitKeyring(config) => {
             let password = init_keyring(&config.keyring_file);
-            eprintln!("keyring initialized with the following password:");
-            println!("{}", password);
+            if std::io::stdout().is_terminal() {
+                eprintln!("keyring initialized with the following password:");
+                println!("{}", password);
+            } else {
+                print!("{}", password);
+            }
         }
         Http(config) => http::main(config).unwrap(),
     }
