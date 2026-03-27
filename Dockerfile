@@ -1,24 +1,25 @@
-FROM dhi.io/rust:1.92-alpine3.22-dev AS build
+FROM debian:13
+USER root
 
-RUN apk add --no-cache openssl-dev pkgconfig file make git openssl-libs-static
+# `-` is reserved by deb maintainer, should use '~' instead
+# If no version is specified, the latest available version will be installed
+ARG version
 
-WORKDIR /build
+RUN useradd --create-home --shell /bin/false ds_proxy
 
-RUN --mount=type=bind,source=src,target=src \
-    --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
-    --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
-    --mount=type=bind,source=build.rs,target=build.rs \
-    --mount=type=cache,target=/build/target/ \
-    --mount=type=cache,target=/usr/local/cargo/git/db \
-    --mount=type=cache,target=/usr/local/cargo/registry/ \
-    cargo build --locked --release && \
-    cp /build/target/release/ds_proxy /build/ds_proxy
+# Add DS/DN repo
+RUN apt-get update && apt-get -y install curl gpg \
+    && curl -sS https://demarche.numerique.gouv.fr/packages.demarche.numerique.gouv.fr.gpg | gpg --dearmor -o /usr/share/keyrings/packages.demarche.numerique.gouv.fr.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/packages.demarche.numerique.gouv.fr.gpg] http://packages.demarche.numerique.gouv.fr/jammy/ /" > /etc/apt/sources.list.d/packages_demarche_numerique_gouv_fr_jammy.list \
+    && apt-get update \
+    && apt-get -y install --no-install-recommends ca-certificates \
+    && apt-get -y install ds-proxy${version:+=${version}} \
+    && apt-get remove --purge -y curl gpg \
+    && apt-get autoremove -y \
+    && apt-get clean
 
-
-FROM dhi.io/alpine-base:3.22 AS production
-
-COPY --from=build --chown=nonroot:nonroot /build/ds_proxy /dsproxy/ds_proxy
+USER ds_proxy
 
 EXPOSE 4444
 
-ENTRYPOINT ["/dsproxy/ds_proxy"]
+ENTRYPOINT ["/usr/bin/ds_proxy"]

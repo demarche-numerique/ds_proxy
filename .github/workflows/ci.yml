@@ -63,3 +63,12 @@ jobs:
         run: sudo sysctl vm.overcommit_memory=1
 
       - run: cargo test --all-features
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build Docker image
+        run: docker build .
