@@ -36,6 +36,7 @@ fn upload_and_download() {
     );
     assert!(node_received_header("x-amz-date").is_some());
     assert!(node_received_header("authorization").is_some());
+    assert!(node_received_header("content-md5").is_none());
 
     let uploaded_bytes = std::fs::read(uploaded_path).expect("uploaded should exist !");
     assert_eq!(&uploaded_bytes[0..PREFIX_SIZE], PREFIX);
