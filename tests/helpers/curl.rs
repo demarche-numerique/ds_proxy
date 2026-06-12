@@ -26,6 +26,10 @@ pub fn curl_put(file_path: &str, url: &str) -> Output {
         .arg(url)
         .arg("--data-binary")
         .arg(format!("@{}", file_path))
+        // checksum of the cleartext data, it must be removed by the proxy
+        // as the encrypted body no longer matches it
+        .arg("-H")
+        .arg("Content-MD5: Q2hlY2tJbnRlZ3JpdHk=")
         .arg("--dump-header")
         .arg(RETURNED_HEADER)
         .output()

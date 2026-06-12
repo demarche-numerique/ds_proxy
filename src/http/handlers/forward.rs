@@ -12,11 +12,14 @@ use std::time::Duration;
 
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
-static FORWARD_REQUEST_HEADERS_TO_REMOVE: [header::HeaderName; 4] = [
+static FORWARD_REQUEST_HEADERS_TO_REMOVE: [header::HeaderName; 5] = [
     // Connection settings (keepalived) must not be resend
     header::CONNECTION,
     // Encryption changes the length of the content
     header::CONTENT_LENGTH,
+    // The Content-MD5 sent by the client is the checksum of the cleartext
+    // data, it does not match the encrypted body forwarded to the storage
+    header::HeaderName::from_static("content-md5"),
     // Openstack checks the ETAG header as a md5 checksum of the data
     // the encryption change the data and thus the etag
     header::ETAG,
