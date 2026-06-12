@@ -237,10 +237,8 @@ pub fn add_a_key(keyring_path: &str, password: &str) -> assert_cmd::assert::Asse
 pub fn compute_sha256(file_path: &str) -> String {
     use data_encoding::HEXLOWER;
     use sha2::{Digest, Sha256};
-    use std::{fs, io};
+    use std::fs;
 
-    let mut file = fs::File::open(file_path).unwrap();
-    let mut hasher = Sha256::new();
-    let _n = io::copy(&mut file, &mut hasher).unwrap();
-    HEXLOWER.encode(&hasher.finalize()[..])
+    let bytes = fs::read(file_path).unwrap();
+    HEXLOWER.encode(&Sha256::digest(&bytes)[..])
 }
