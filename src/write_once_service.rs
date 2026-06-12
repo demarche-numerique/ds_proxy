@@ -20,7 +20,7 @@ impl WriteOnceService {
     }
 
     pub fn hash_key(path: &str) -> String {
-        format!("locks:{:x}", Sha256::digest(path.as_bytes()))
+        format!("locks:{}", hex::encode(Sha256::digest(path.as_bytes())))
     }
     pub async fn lock(&self, path: &str) -> Result<bool, String> {
         let key = Self::hash_key(path);
