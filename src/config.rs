@@ -2,6 +2,7 @@ use super::s3_config::S3Config;
 use super::{args, keyring::Keyring, keyring_utils::load_keyring};
 use crate::redis_config::RedisConfig;
 use actix_web::HttpRequest;
+use awc::ClientRequest;
 use aws_sdk_s3::config::Credentials;
 use std::env;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -40,6 +41,10 @@ pub struct EncryptConfig {
 #[derive(Debug, Clone)]
 pub struct HttpConfig {
     pub upstream_base_url: Url,
+    // Optional connect target: when set, the actual TCP connection is made to
+    // this scheme/host/port instead of upstream_base_url, while the S3 signature
+    // and the Host header still reference upstream_base_url
+    pub connect_base_url: Option<Url>,
     pub keyring: Keyring,
     pub address: SocketAddr,
     pub local_encryption_directory: PathBuf,
@@ -134,6 +139,16 @@ impl Config {
             let raw_upstream_base_url = string_from(&args.flag_upstream_url, "DS_UPSTREAM_URL");
             let upstream_base_url = normalize_and_parse_upstream_url(raw_upstream_base_url);
 
+            let connect_base_url = optional_string_from(&args.flag_connect_url, "DS_CONNECT_URL")
+                .map(|raw| Url::parse(&raw).expect("DS_CONNECT_URL is not a valid URL"));
+            if let Some(connect) = &connect_base_url {
+                log::info!(
+                    "connect_base_url: {} (upstream: {})",
+                    connect,
+                    upstream_base_url
+                );
+            }
+
             let address = match &args.flag_address {
                 Some(address) => match address.to_socket_addrs() {
                     Ok(mut sockets) => Some(sockets.next().unwrap()),
@@ -199,6 +214,7 @@ impl Config {
             Config::Http(HttpConfig {
                 keyring,
                 upstream_base_url,
+                connect_base_url,
                 address,
                 local_encryption_directory,
                 s3_config,
@@ -222,6 +238,10 @@ fn bool_from(flag: bool, env_var: &str) -> bool {
             _ => false,
         }
     }
+}
+
+fn optional_string_from(flag: &Option<String>, env_var: &str) -> Option<String> {
+    flag.clone().or_else(|| env::var(env_var).ok())
 }
 
 fn string_from(flag: &Option<String>, env_var: &str) -> String {
@@ -263,6 +283,32 @@ impl HttpConfig {
         log::debug!("Created upstream url: {}", url);
 
         url
+    }
+
+    // Points an already-signed request at the connect target, if one is
+    // configured. Only the dialed scheme/host/port change; the signature and the
+    // Host header stay on the upstream.
+    pub fn apply_connect_url(&self, req: ClientRequest) -> ClientRequest {
+        let connection_url = self.connection_url(&req.get_uri().to_string());
+        req.uri(connection_url)
+    }
+
+    fn connection_url(&self, upstream_url: &str) -> String {
+        match &self.connect_base_url {
+            None => upstream_url.to_string(),
+            Some(connect) => {
+                let mut url = Url::parse(upstream_url).expect("upstream url should be valid");
+                url.set_scheme(connect.scheme())
+                    .expect("connect scheme should be valid");
+                url.set_host(connect.host_str())
+                    .expect("connect host should be valid");
+                url.set_port(connect.port_or_known_default())
+                    .expect("connect port should be valid");
+                let url = url.to_string();
+                log::debug!("Created connection url: {}", url);
+                url
+            }
+        }
     }
 
     pub fn local_encryption_path_for(&self, req: &HttpRequest) -> Option<PathBuf> {
@@ -423,12 +469,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_connection_url() {
+        // Without a connect target, the connection url is the upstream unchanged.
+        let config = default_config("https://s3.sbg.io.cloud.ovh.net/");
+        let upstream = "https://s3.sbg.io.cloud.ovh.net/bucket/file?x=1";
+        assert_eq!(config.connection_url(upstream), upstream);
+
+        // With a connect target, only scheme/host/port are swapped; path and query stay.
+        let mut connected = default_config("https://s3.sbg.io.cloud.ovh.net/");
+        connected.connect_base_url = Some(Url::parse("http://192.168.33.70:8006").unwrap());
+        assert_eq!(
+            connected.connection_url(upstream),
+            "http://192.168.33.70:8006/bucket/file?x=1"
+        );
+
+        // A connect target without explicit port falls back to the scheme default.
+        let mut connected_default_port = default_config("https://s3.sbg.io.cloud.ovh.net/");
+        connected_default_port.connect_base_url = Some(Url::parse("http://192.168.33.70").unwrap());
+        assert_eq!(
+            connected_default_port.connection_url(upstream),
+            "http://192.168.33.70/bucket/file?x=1"
+        );
+    }
+
     fn default_config(upstream_base_url: &str) -> HttpConfig {
         let keyring = Keyring::new(HashMap::new());
 
         HttpConfig {
             keyring,
             upstream_base_url: normalize_and_parse_upstream_url(upstream_base_url.to_string()),
+            connect_base_url: None,
             address: "127.0.0.1:1234".to_socket_addrs().unwrap().next().unwrap(),
             local_encryption_directory: PathBuf::from(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY),
             s3_config: None,
