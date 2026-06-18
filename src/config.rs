@@ -40,6 +40,10 @@ pub struct EncryptConfig {
 #[derive(Debug, Clone)]
 pub struct HttpConfig {
     pub upstream_base_url: Url,
+    // Optional connect target: when set, the actual TCP connection is made to
+    // this scheme/host/port instead of upstream_base_url, while the S3 signature
+    // and the Host header still reference upstream_base_url
+    pub connect_base_url: Option<Url>,
     pub keyring: Keyring,
     pub address: SocketAddr,
     pub local_encryption_directory: PathBuf,
@@ -134,6 +138,16 @@ impl Config {
             let raw_upstream_base_url = string_from(&args.flag_upstream_url, "DS_UPSTREAM_URL");
             let upstream_base_url = normalize_and_parse_upstream_url(raw_upstream_base_url);
 
+            let connect_base_url = optional_string_from(&args.flag_connect_url, "DS_CONNECT_URL")
+                .map(|raw| Url::parse(&raw).expect("DS_CONNECT_URL is not a valid URL"));
+            if let Some(connect) = &connect_base_url {
+                log::info!(
+                    "connect_base_url: {} (upstream: {})",
+                    connect,
+                    upstream_base_url
+                );
+            }
+
             let address = match &args.flag_address {
                 Some(address) => match address.to_socket_addrs() {
                     Ok(mut sockets) => Some(sockets.next().unwrap()),
@@ -199,6 +213,7 @@ impl Config {
             Config::Http(HttpConfig {
                 keyring,
                 upstream_base_url,
+                connect_base_url,
                 address,
                 local_encryption_directory,
                 s3_config,
@@ -222,6 +237,10 @@ fn bool_from(flag: bool, env_var: &str) -> bool {
             _ => false,
         }
     }
+}
+
+fn optional_string_from(flag: &Option<String>, env_var: &str) -> Option<String> {
+    flag.clone().or_else(|| env::var(env_var).ok())
 }
 
 fn string_from(flag: &Option<String>, env_var: &str) -> String {
@@ -429,6 +448,7 @@ mod tests {
         HttpConfig {
             keyring,
             upstream_base_url: normalize_and_parse_upstream_url(upstream_base_url.to_string()),
+            connect_base_url: None,
             address: "127.0.0.1:1234".to_socket_addrs().unwrap().next().unwrap(),
             local_encryption_directory: PathBuf::from(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY),
             s3_config: None,
