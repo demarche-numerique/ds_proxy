@@ -40,6 +40,14 @@ impl ProxyAndNode {
         ProxyAndNode::start_with_options(None, None, PrintServerLogs::No, None, false)
     }
 
+    pub fn start_with_connect_url(upstream_url: &str, connect_url: &str) -> ProxyAndNode {
+        let proxy = launch_proxy_with_connect_url(upstream_url, connect_url);
+        let node = launch_node_with_latency(None, PrintServerLogs::No);
+        let redis = launch_redis(PrintServerLogs::No);
+        thread::sleep(time::Duration::from_secs(4));
+        ProxyAndNode { proxy, node, redis }
+    }
+
     pub fn start_with_keyring_path(keyring_path: &str, password: &str) -> ProxyAndNode {
         ProxyAndNode::start_with_options(
             Some(password),
@@ -116,6 +124,27 @@ pub fn launch_proxy(
         }
         PrintServerLogs::No => (),
     }
+
+    let child = command.spawn().expect("failed to execute ds_proxy");
+    ChildGuard {
+        child,
+        description: "ds_proxy",
+    }
+}
+
+pub fn launch_proxy_with_connect_url(upstream_url: &str, connect_url: &str) -> ChildGuard {
+    let mut command = Command::new(cargo::cargo_bin!("ds_proxy"));
+    command
+        .arg("proxy")
+        .arg("--address=localhost:4444")
+        .arg(format!("--upstream-url={}", upstream_url))
+        .arg(format!("--connect-url={}", connect_url))
+        .arg("--s3-access-key=key")
+        .arg("--s3-secret-key=secret")
+        .arg("--s3-region=region")
+        .arg("--bypass-s3-signature-check")
+        .env("DS_KEYRING", DS_KEYRING)
+        .env("DS_PASSWORD", PASSWORD);
 
     let child = command.spawn().expect("failed to execute ds_proxy");
     ChildGuard {
