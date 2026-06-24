@@ -117,6 +117,46 @@ puis `rclone --config rclone.conf copy to_sync through-proxy:bucket`
 
 Attention: rclone est tatillon sur le `force_path_style` (qui permet de ne pas mettre l'hote dans l'url mais dans le path). Il n'est appliqué que si `provider = Other`, ou si l'endpoint contient une IP (ex: `127.0.0.1` au lieu de `localhost`).
 
+### [Ruby on Rails](https://rubyonrails.org/)
+
+Configuration testée avec Rails 8.0.5, ds_proxy 2.0.0-alpha.7
+
+conf .env de ds_proxy:
+```
+DS_PROXY_ADDRESS="0.0.0.0:4444"
+
+S3_REGION="sbg"
+UPSTREAM_URL="https://s3.sbg.io.cloud.ovh.net"
+S3_ACCESS_KEY=a_key
+S3_SECRET_KEY=a_secret_key
+```
+
+puis `./launch_demo.sh s3`
+
+conf rails storage.yml:
+```
+amazon:
+  service: S3
+  access_key_id: a_key
+  secret_access_key: a_secret_key
+  region: sbg
+  bucket: bucket
+  endpoint: http://localhost:4444/upstream
+  force_path_style: true
+```
+
+`force_path_style: true` est indispensable, sinon l'aws-sdk vise `bucket.localhost` (virtual-hosted) au lieu du path `/upstream/bucket` du proxy.
+
+puis dans une console rails
+
+```
+blob = ActiveStorage::Blob.create_and_upload!(
+  io: StringIO.new("hello s3 #{Time.current}"),
+  filename: "test-s3.txt",
+  content_type: "text/plain"
+)
+```
+
 ## Dans le détail
 
 ### Algo
