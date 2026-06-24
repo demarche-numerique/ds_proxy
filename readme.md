@@ -82,6 +82,41 @@ systemd-ask-password > password_file
 rm -f password_file
 ```
 
+## Compat avec d'autres outils
+
+### [Rclone](rclone.org)
+
+Configuration testée avec rclone v1.74.3, ds_proxy 2.0.0-alpha.7
+
+conf .env de ds_proxy:
+```
+DS_PROXY_ADDRESS="0.0.0.0:4444"
+
+S3_REGION="sbg"
+UPSTREAM_URL="https://s3.sbg.io.cloud.ovh.net"
+S3_ACCESS_KEY=a_key
+S3_SECRET_KEY=a_secret_key
+```
+
+puis `./launch_demo.sh s3`
+
+conf rclone:
+```
+[through-proxy]
+type = s3
+provider = Other
+access_key_id = a_key
+secret_access_key = a_secret_key
+acl = private
+region = sbg
+endpoint = http://localhost:4444/upstream
+force_path_style = true
+```
+
+puis `rclone --config rclone.conf copy to_sync through-proxy:bucket`
+
+Attention: rclone est tatillon sur le `force_path_style` (qui permet de ne pas mettre l'hote dans l'url mais dans le path). Il n'est appliqué que si `provider = Other`, ou si l'endpoint contient une IP (ex: `127.0.0.1` au lieu de `localhost`).
+
 ## Dans le détail
 
 ### Algo
