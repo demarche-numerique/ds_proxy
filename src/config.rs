@@ -40,7 +40,15 @@ pub struct EncryptConfig {
 
 #[derive(Debug, Clone)]
 pub struct HttpConfig {
-    pub upstream_base_url: Url,
+    // Resolved upstream per flavor. In single mode exactly one is Some and every
+    // request uses it; in dual mode both are Some and requests are routed by
+    // their detected flavor.
+    pub s3_upstream_base_url: Option<Url>,
+    pub swift_upstream_base_url: Option<Url>,
+    // True only when both an S3 upstream and an explicit Swift upstream are
+    // configured together with S3 credentials: requests are then dispatched per
+    // their detected flavor. Otherwise the proxy serves a single backend.
+    pub dual: bool,
     pub keyring: Keyring,
     pub address: SocketAddr,
     pub local_encryption_directory: PathBuf,
@@ -132,18 +140,27 @@ impl Config {
                 )
             });
 
-            let raw_upstream_base_url = string_from(&args.flag_upstream_url, "DS_UPSTREAM_URL");
-            let upstream_base_url = normalize_and_parse_upstream_url(raw_upstream_base_url);
+            // --upstream-url is the shared default; a flavor-specific flag
+            // overrides it for that flavor.
+            let raw_upstream = optional_string_from(&args.flag_upstream_url, "DS_UPSTREAM_URL");
+            let raw_s3_upstream =
+                optional_string_from(&args.flag_s3_upstream_url, "DS_S3_UPSTREAM_URL");
+            let raw_swift_upstream =
+                optional_string_from(&args.flag_swift_upstream_url, "DS_SWIFT_UPSTREAM_URL");
+
+            let s3_upstream_base_url = raw_s3_upstream
+                .or_else(|| raw_upstream.clone())
+                .map(normalize_and_parse_upstream_url);
+            let swift_upstream_base_url = raw_swift_upstream
+                .clone()
+                .or_else(|| raw_upstream.clone())
+                .map(normalize_and_parse_upstream_url);
 
             let s3_connect_base_url =
                 optional_string_from(&args.flag_s3_connect_url, "DS_S3_CONNECT_URL")
                     .map(|raw| Url::parse(&raw).expect("DS_S3_CONNECT_URL is not a valid URL"));
             if let Some(connect) = &s3_connect_base_url {
-                log::info!(
-                    "s3_connect_base_url: {} (upstream: {})",
-                    connect,
-                    upstream_base_url
-                );
+                log::info!("s3_connect_base_url: {}", connect);
             }
 
             let address = match &args.flag_address {
@@ -188,33 +205,82 @@ impl Config {
                 bypass_ssl_certificate_check
             );
 
-            let s3_config = if let (Some(s3_access_key), Some(s3_secret_key), Some(region)) = (
+            let s3_config = match (
                 &args.flag_s3_access_key,
                 &args.flag_s3_secret_key,
                 &args.flag_s3_region,
             ) {
-                let bypass_signature_check = bool_from(
-                    args.flag_bypass_s3_signature_check,
-                    "BYPASS_S3_SIGNATURE_CHECK",
-                );
+                (Some(s3_access_key), Some(s3_secret_key), Some(region)) => {
+                    let bypass_signature_check = bool_from(
+                        args.flag_bypass_s3_signature_check,
+                        "BYPASS_S3_SIGNATURE_CHECK",
+                    );
 
-                let config = S3Config::new(
-                    Credentials::new(s3_access_key, s3_secret_key, None, None, "cli-credentials"),
-                    region.to_string(),
-                    bypass_signature_check,
-                    s3_connect_base_url,
-                );
-                Some(config)
-            } else {
-                if s3_connect_base_url.is_some() {
-                    log::warn!("s3_connect_url is set but no S3 credentials: ignoring it");
+                    Some(S3Config::new(
+                        Credentials::new(
+                            s3_access_key,
+                            s3_secret_key,
+                            None,
+                            None,
+                            "cli-credentials",
+                        ),
+                        region.to_string(),
+                        bypass_signature_check,
+                        s3_connect_base_url,
+                    ))
                 }
-                None
+                (None, None, None) => {
+                    if s3_connect_base_url.is_some() {
+                        log::warn!("s3_connect_url is set but no S3 credentials: ignoring it");
+                    }
+                    None
+                }
+                _ => panic!(
+                    "Incomplete S3 configuration: --s3-access-key, --s3-secret-key and \
+                     --s3-region must be provided together"
+                ),
             };
+
+            // Dual mode requires an explicit Swift upstream *and* the ability to
+            // sign S3 traffic. An explicit Swift upstream without credentials
+            // degrades to Swift-only.
+            let dual = raw_swift_upstream.is_some() && s3_config.is_some();
+            if raw_swift_upstream.is_some() && s3_config.is_none() {
+                log::warn!(
+                    "--swift-upstream-url set without S3 credentials: running in Swift-only \
+                     mode (no S3 traffic)"
+                );
+            }
+
+            if s3_config.is_some() && s3_upstream_base_url.is_none() {
+                panic!(
+                    "S3 credentials provided but no S3 upstream: set --upstream-url \
+                     or --s3-upstream-url"
+                );
+            }
+            if s3_config.is_none() && swift_upstream_base_url.is_none() {
+                panic!(
+                    "No upstream configured: set --upstream-url, --s3-upstream-url \
+                     or --swift-upstream-url"
+                );
+            }
+
+            log::info!(
+                "mode: {}",
+                if dual {
+                    "dual S3+Swift"
+                } else if s3_config.is_some() {
+                    "S3"
+                } else {
+                    "Swift"
+                }
+            );
 
             Config::Http(HttpConfig {
                 keyring,
-                upstream_base_url,
+                s3_upstream_base_url,
+                swift_upstream_base_url,
+                dual,
                 address,
                 local_encryption_directory,
                 s3_config,
@@ -265,6 +331,16 @@ fn normalize_and_parse_upstream_url(mut url: String) -> Url {
 }
 
 impl HttpConfig {
+    // The upstream a request is forwarded to. Flavor-aware routing lands in a
+    // later commit; for now every request uses the S3 upstream when present,
+    // otherwise the Swift one. At least one is guaranteed to be set.
+    fn base_upstream(&self) -> &Url {
+        self.s3_upstream_base_url
+            .as_ref()
+            .or(self.swift_upstream_base_url.as_ref())
+            .expect("at least one upstream must be configured")
+    }
+
     pub fn create_upstream_url(&self, req: &HttpRequest) -> String {
         let raw_path = req.uri().path();
         // Strip the /upstream/ prefix to get the raw tail, preserving original encoding
@@ -273,7 +349,7 @@ impl HttpConfig {
             .or_else(|| raw_path.strip_prefix("/upstream"))
             .unwrap_or("");
 
-        let base = self.upstream_base_url.as_str(); // always ends with '/'
+        let base = self.base_upstream().as_str(); // always ends with '/'
         let url = if req.query_string().is_empty() {
             format!("{}{}", base, tail)
         } else {
@@ -298,6 +374,7 @@ impl HttpConfig {
             .s3_config
             .as_ref()
             .and_then(|c| c.connect_base_url.as_ref());
+
         match connect {
             None => upstream_url.to_string(),
             Some(connect) => {
@@ -512,7 +589,11 @@ mod tests {
 
         HttpConfig {
             keyring,
-            upstream_base_url: normalize_and_parse_upstream_url(upstream_base_url.to_string()),
+            s3_upstream_base_url: Some(normalize_and_parse_upstream_url(
+                upstream_base_url.to_string(),
+            )),
+            swift_upstream_base_url: None,
+            dual: false,
             address: "127.0.0.1:1234".to_socket_addrs().unwrap().next().unwrap(),
             local_encryption_directory: PathBuf::from(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY),
             s3_config: None,
