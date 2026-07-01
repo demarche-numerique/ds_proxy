@@ -104,6 +104,7 @@ mod tests {
             Credentials::new("an_access_key", "a_secret_key", None, None, "test"),
             "eu-west-1".to_string(),
             true,
+            None,
         )
     }
 

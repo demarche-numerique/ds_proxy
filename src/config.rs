@@ -41,10 +41,6 @@ pub struct EncryptConfig {
 #[derive(Debug, Clone)]
 pub struct HttpConfig {
     pub upstream_base_url: Url,
-    // Optional connect target: when set, the actual TCP connection is made to
-    // this scheme/host/port instead of upstream_base_url, while the S3 signature
-    // and the Host header still reference upstream_base_url
-    pub s3_connect_base_url: Option<Url>,
     pub keyring: Keyring,
     pub address: SocketAddr,
     pub local_encryption_directory: PathBuf,
@@ -206,16 +202,19 @@ impl Config {
                     Credentials::new(s3_access_key, s3_secret_key, None, None, "cli-credentials"),
                     region.to_string(),
                     bypass_signature_check,
+                    s3_connect_base_url,
                 );
                 Some(config)
             } else {
+                if s3_connect_base_url.is_some() {
+                    log::warn!("s3_connect_url is set but no S3 credentials: ignoring it");
+                }
                 None
             };
 
             Config::Http(HttpConfig {
                 keyring,
                 upstream_base_url,
-                s3_connect_base_url,
                 address,
                 local_encryption_directory,
                 s3_config,
@@ -295,7 +294,11 @@ impl HttpConfig {
     }
 
     fn connection_url(&self, upstream_url: &str) -> String {
-        match &self.s3_connect_base_url {
+        let connect = self
+            .s3_config
+            .as_ref()
+            .and_then(|c| c.connect_base_url.as_ref());
+        match connect {
             None => upstream_url.to_string(),
             Some(connect) => {
                 let mut url = Url::parse(upstream_url).expect("upstream url should be valid");
@@ -479,7 +482,7 @@ mod tests {
 
         // With a connect target, only scheme/host/port are swapped; path and query stay.
         let mut connected = default_config("https://s3.sbg.io.cloud.ovh.net/");
-        connected.s3_connect_base_url = Some(Url::parse("http://192.168.33.70:8006").unwrap());
+        connected.s3_config = Some(s3_config_with_connect("http://192.168.33.70:8006"));
         assert_eq!(
             connected.connection_url(upstream),
             "http://192.168.33.70:8006/bucket/file?x=1"
@@ -487,11 +490,21 @@ mod tests {
 
         // A connect target without explicit port falls back to the scheme default.
         let mut connected_default_port = default_config("https://s3.sbg.io.cloud.ovh.net/");
-        connected_default_port.s3_connect_base_url = Some(Url::parse("http://192.168.33.70").unwrap());
+        connected_default_port.s3_config = Some(s3_config_with_connect("http://192.168.33.70"));
         assert_eq!(
             connected_default_port.connection_url(upstream),
             "http://192.168.33.70/bucket/file?x=1"
         );
+    }
+
+    fn s3_config_with_connect(connect: &str) -> S3Config {
+        use aws_sdk_s3::config::Credentials;
+        S3Config::new(
+            Credentials::new("key", "secret", None, None, "test"),
+            "region".to_string(),
+            true,
+            Some(Url::parse(connect).unwrap()),
+        )
     }
 
     fn default_config(upstream_base_url: &str) -> HttpConfig {
@@ -500,7 +513,6 @@ mod tests {
         HttpConfig {
             keyring,
             upstream_base_url: normalize_and_parse_upstream_url(upstream_base_url.to_string()),
-            s3_connect_base_url: None,
             address: "127.0.0.1:1234".to_socket_addrs().unwrap().next().unwrap(),
             local_encryption_directory: PathBuf::from(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY),
             s3_config: None,
