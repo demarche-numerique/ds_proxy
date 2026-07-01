@@ -47,7 +47,7 @@ Description=DS Proxy Service
 After=network.target
 
 [Service]
-ExectStart=/usr/bin/ds_proxy proxy --password-file /var/ds_proxy/password --keyring-file /var/ds_proxy/keyring.toml  --local-encryption-directory /var/ds_proxy/local_encryption/ --address 0.0.0.0:4444 --upstream_url 'https://my-storage-object.com'
+ExectStart=/usr/bin/ds_proxy proxy --password-file /var/ds_proxy/password --keyring-file /var/ds_proxy/keyring.toml  --local-encryption-directory /var/ds_proxy/local_encryption/ --address 0.0.0.0:4444 --upstream-url 'https://my-storage-object.com'
 
 Environment=RUST_LOG="actix_web=info"
 ...
@@ -55,14 +55,14 @@ Environment=RUST_LOG="actix_web=info"
 
 #### Cible de connexion (`--connect-url`)
 
-Par défaut, ds_proxy ouvre la connexion vers `--upstream_url` (qui sert aussi
+Par défaut, ds_proxy ouvre la connexion vers `--upstream-url` (qui sert aussi
 au calcul de la signature S3 et au header `Host`). Sur une machine sans accès
 internet ni résolution DNS, on peut router le flux à travers un intermédiaire
 (par exemple un haproxy) tout en continuant à signer pour l'upstream réel.
 C'est la même idée que le `--connect-to` de curl :
 
 ```
---upstream_url 'https://s3.cloud.ovh.net' --connect-url 'http://192.168.1.2:3456'
+--upstream-url 'https://s3.cloud.ovh.net' --connect-url 'http://192.168.1.2:3456'
 ```
 
 Dans ce cas la connexion TCP est faite vers `192.168.1.2:3456`, mais la
