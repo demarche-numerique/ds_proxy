@@ -53,6 +53,35 @@ Environment=RUST_LOG="actix_web=info"
 ...
 ```
 
+#### Backends S3, Swift, ou les deux
+
+Le proxy choisit l'upstream selon des flags dédiés :
+
+- `--upstream-url` : défaut partagé, utilisé pour toute flavor non surchargée.
+- `--s3-upstream-url` : upstream du trafic S3 (surcharge `--upstream-url`).
+- `--swift-upstream-url` : upstream du trafic Swift (surcharge `--upstream-url`).
+
+Équivalents en variables d'environnement : `DS_UPSTREAM_URL`,
+`DS_S3_UPSTREAM_URL`, `DS_SWIFT_UPSTREAM_URL`.
+
+Trois modes en découlent :
+
+- **S3 seul** : `--upstream-url` (ou `--s3-upstream-url`) + les credentials
+  `--s3-access-key`, `--s3-secret-key`, `--s3-region`. Le proxy vérifie la
+  signature entrante (sauf `--bypass-s3-signature-check`) et re-signe en sortie.
+- **Swift seul** : `--upstream-url` (ou `--swift-upstream-url`) sans credentials
+  S3. Les requêtes sont relayées telles quelles ; l'authentification
+  (`X-Auth-Token`, TempURL…) est déléguée à l'upstream Swift.
+- **Dual** : `--swift-upstream-url` **et** `--s3-upstream-url` + credentials s3. Le
+  proxy détecte pour chaque requête si elle est signée S3
+  (`Authorization: AWS4-HMAC-SHA256` ou query `X-Amz-Signature`) ; le cas
+  échéant elle part vers l'upstream S3 (re-signée), sinon elle est traitée comme
+  Swift et relayée vers l'upstream Swift.
+
+Un `--swift-upstream-url` fourni sans credentials S3 dégrade en mode Swift seul.
+Une configuration S3 partielle (un seul des trois credentials) est refusée au
+démarrage.
+
 #### Cible de connexion (`--s3-connect-url`)
 
 Par défaut, ds_proxy ouvre la connexion vers `--upstream_url` (qui sert aussi
