@@ -95,6 +95,62 @@ mod tests {
 
     #[actix_web::test]
     #[serial(servers)]
+    async fn test_ensure_write_once_blocks_s3_presigned_url() {
+        let _redis_process = launch_redis_with_delay();
+
+        let config = RedisConfig {
+            url: Url::parse("redis://127.0.0.1:5555").unwrap(),
+            ..RedisConfig::default()
+        };
+        let redis_pool = configure_redis_pool(config).await;
+
+        let mut actix_app = App::new().service(
+            resource("/s3-path")
+                .guard(Get())
+                .wrap(from_fn(ensure_write_once))
+                .to(mock_success),
+        );
+
+        actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool.clone())));
+
+        match redis_pool.get().await {
+            Ok(mut conn) => {
+                let _: () = conn
+                    .del(WriteOnceService::hash_key("/s3-path"))
+                    .await
+                    .unwrap();
+            }
+            Err(_err) => panic!("Failed to get Redis connection"),
+        }
+
+        let app = test::init_service(actix_app).await;
+
+        // First request: an S3 presigned URL (x-amz-expires) should pass and lock
+        let req = test::TestRequest::get()
+            .uri("/s3-path?X-Amz-Expires=60&X-Amz-Signature=abc")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        // Subsequent presigned writes on the same path are denied, whatever the
+        // parameter casing.
+        let bypass_attempts = [
+            "/s3-path?X-Amz-Expires=60&X-Amz-Signature=abc", // identical
+            "/s3-path?x-amz-expires=60&x-amz-signature=def", // lowercased
+        ];
+
+        for uri in bypass_attempts {
+            let req = test::TestRequest::get().uri(uri).to_request();
+            let resp = test::try_call_service(&app, req).await;
+            match resp {
+                Ok(resp) => panic!("Expected 403 for {}, got {}", uri, resp.status()),
+                Err(err) => assert_eq!(err.error_response().status(), 403),
+            }
+        }
+    }
+
+    #[actix_web::test]
+    #[serial(servers)]
     async fn test_ensure_write_once_skips_private_uri() {
         let _redis_process = launch_redis_with_delay();
 

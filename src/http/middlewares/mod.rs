@@ -17,9 +17,13 @@ pub async fn ensure_write_once(
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
     let uri = req.uri();
 
-    let user_facing_uri = uri
-        .query()
-        .is_some_and(|query| query.contains("temp_url_expires"));
+    // Only guard presigned/user-facing writes: Swift TempURL (temp_url_expires)
+    // and S3 presigned URLs (x-amz-expires). Both flavors are covered so
+    // write-once holds in dual mode too.
+    let user_facing_uri = uri.query().is_some_and(|query| {
+        let query = query.to_ascii_lowercase();
+        query.contains("temp_url_expires") || query.contains("x-amz-expires")
+    });
 
     if !user_facing_uri {
         return next.call(req).await;
