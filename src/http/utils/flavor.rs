@@ -1,8 +1,7 @@
-// Wired into the middleware and handlers in a later commit; until then the
-// items are only exercised by unit tests.
-#![allow(dead_code)]
-
 use actix_web::HttpRequest;
+use url::Url;
+
+use crate::config::HttpConfig;
 
 /// Which storage API a given request speaks.
 ///
@@ -28,6 +27,28 @@ pub fn detect_flavor(req: &HttpRequest) -> Flavor {
     } else {
         Flavor::Swift
     }
+}
+
+/// Resolve which flavor a request is served as, and the upstream to forward it
+/// to. Per-request detection only happens in dual mode; in single mode every
+/// request is forced to the configured backend (S3 when credentials are set,
+/// otherwise Swift), so unsigned clients keep working as before.
+pub fn route<'a>(config: &'a HttpConfig, req: &HttpRequest) -> (Flavor, &'a Url) {
+    let flavor = if config.dual {
+        detect_flavor(req)
+    } else if config.s3_config.is_some() {
+        Flavor::S3
+    } else {
+        Flavor::Swift
+    };
+
+    let base = match flavor {
+        Flavor::S3 => config.s3_upstream_base_url.as_ref(),
+        Flavor::Swift => config.swift_upstream_base_url.as_ref(),
+    }
+    .expect("upstream for the resolved flavor must be configured");
+
+    (flavor, base)
 }
 
 fn is_s3_signed(req: &HttpRequest) -> bool {

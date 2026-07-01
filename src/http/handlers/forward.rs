@@ -1,4 +1,5 @@
 use crate::config::DEFAULT_CHUNK_SIZE;
+use crate::http::utils::flavor::{route, Flavor};
 use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
@@ -39,7 +40,8 @@ pub async fn forward(
     client: web::Data<Client>,
     config: web::Data<HttpConfig>,
 ) -> Result<HttpResponse, Error> {
-    let put_url = config.create_upstream_url(&req);
+    let (flavor, base) = route(&config, &req);
+    let put_url = config.create_upstream_url(&req, base);
 
     let mut forwarded_req = client
         .request_from(put_url.clone(), req.head())
@@ -47,7 +49,7 @@ pub async fn forward(
         .timeout(UPLOAD_TIMEOUT);
 
     if let Some(length) = content_length(req.headers()) {
-        if config.s3_config.is_some() {
+        if flavor == Flavor::S3 {
             log::info!(
                 "Adding x-amz-meta-original-content-length header with length {}",
                 length
@@ -80,13 +82,12 @@ pub async fn forward(
         Some(hasher_clone),
     );
 
-    let final_req = if let Some(s3_config) = config.s3_config.clone() {
-        sign_request(forwarded_req, s3_config)
-    } else {
-        forwarded_req
+    let final_req = match (flavor, config.s3_config.clone()) {
+        (Flavor::S3, Some(s3_config)) => {
+            config.apply_s3_connect_url(sign_request(forwarded_req, s3_config))
+        }
+        _ => forwarded_req,
     };
-
-    let final_req = config.apply_s3_connect_url(final_req);
 
     let res_e = if let Some(length) = forward_length {
         final_req

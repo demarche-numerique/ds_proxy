@@ -1,4 +1,5 @@
 use super::super::config::HttpConfig;
+use super::utils::flavor::{detect_flavor, Flavor};
 use super::utils::verify_signature::is_signature_valid;
 use crate::write_once_service::WriteOnceService;
 use actix_http::Method;
@@ -69,8 +70,15 @@ pub async fn verify_s3_signature(
 
     let config = service_request.app_data::<web::Data<HttpConfig>>().unwrap();
 
-    if let Some(config) = config.s3_config.clone() {
-        if !config.bypass_signature_check && !is_signature_valid(service_request.request(), config)
+    // In dual mode only S3-flavored requests are signature-checked; Swift
+    // requests delegate auth to the upstream. In single mode every request is
+    // treated as S3 when credentials are configured (unchanged behavior).
+    let is_s3_request = !config.dual || detect_flavor(service_request.request()) == Flavor::S3;
+
+    if let Some(s3_config) = config.s3_config.clone() {
+        if is_s3_request
+            && !s3_config.bypass_signature_check
+            && !is_signature_valid(service_request.request(), s3_config)
         {
             log::warn!(
                 "Invalid S3 signature for request: {}",

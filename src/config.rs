@@ -331,17 +331,9 @@ fn normalize_and_parse_upstream_url(mut url: String) -> Url {
 }
 
 impl HttpConfig {
-    // The upstream a request is forwarded to. Flavor-aware routing lands in a
-    // later commit; for now every request uses the S3 upstream when present,
-    // otherwise the Swift one. At least one is guaranteed to be set.
-    fn base_upstream(&self) -> &Url {
-        self.s3_upstream_base_url
-            .as_ref()
-            .or(self.swift_upstream_base_url.as_ref())
-            .expect("at least one upstream must be configured")
-    }
-
-    pub fn create_upstream_url(&self, req: &HttpRequest) -> String {
+    // Build the upstream URL for a request, given the already-resolved upstream
+    // base (see http::utils::flavor::route). The base always ends with '/'.
+    pub fn create_upstream_url(&self, req: &HttpRequest, base: &Url) -> String {
         let raw_path = req.uri().path();
         // Strip the /upstream/ prefix to get the raw tail, preserving original encoding
         let tail = raw_path
@@ -349,7 +341,7 @@ impl HttpConfig {
             .or_else(|| raw_path.strip_prefix("/upstream"))
             .unwrap_or("");
 
-        let base = self.base_upstream().as_str(); // always ends with '/'
+        let base = base.as_str(); // always ends with '/'
         let url = if req.query_string().is_empty() {
             format!("{}{}", base, tail)
         } else {
@@ -467,12 +459,9 @@ mod tests {
         let req = TestRequest::default()
             .uri("/upstream/file")
             .to_http_request();
+        assert_eq!(upstream_url(&config, &req), "https://upstream.com/file");
         assert_eq!(
-            config.create_upstream_url(&req),
-            "https://upstream.com/file"
-        );
-        assert_eq!(
-            jailed_config.create_upstream_url(&req),
+            upstream_url(&jailed_config, &req),
             "https://upstream.com/jail/cell/file"
         );
 
@@ -481,11 +470,11 @@ mod tests {
             .uri("/upstream/sub/dir/file")
             .to_http_request();
         assert_eq!(
-            config.create_upstream_url(&req),
+            upstream_url(&config, &req),
             "https://upstream.com/sub/dir/file"
         );
         assert_eq!(
-            jailed_config.create_upstream_url(&req),
+            upstream_url(&jailed_config, &req),
             "https://upstream.com/jail/cell/sub/dir/file"
         );
 
@@ -494,20 +483,20 @@ mod tests {
             .uri("/upstream/bucket/file.zip?p1=ok1&p2=ok2")
             .to_http_request();
         assert_eq!(
-            config.create_upstream_url(&req),
+            upstream_url(&config, &req),
             "https://upstream.com/bucket/file.zip?p1=ok1&p2=ok2"
         );
 
         // No name — returns base URL
         let req = TestRequest::default().uri("/upstream").to_http_request();
-        assert_eq!(config.create_upstream_url(&req), "https://upstream.com/");
+        assert_eq!(upstream_url(&config, &req), "https://upstream.com/");
 
         // Encoding preserved transparently (no decode → re-encode cycle)
         let req = TestRequest::default()
             .uri("/upstream/plop%20plop%27plop.png")
             .to_http_request();
         assert_eq!(
-            config.create_upstream_url(&req),
+            upstream_url(&config, &req),
             "https://upstream.com/plop%20plop%27plop.png"
         );
 
@@ -516,11 +505,11 @@ mod tests {
             .uri("/upstream/../escape")
             .to_http_request();
         assert_eq!(
-            config.create_upstream_url(&req),
+            upstream_url(&config, &req),
             "https://upstream.com/../escape"
         );
         assert_eq!(
-            jailed_config.create_upstream_url(&req),
+            upstream_url(&jailed_config, &req),
             "https://upstream.com/jail/cell/../escape"
         );
     }
@@ -542,7 +531,7 @@ mod tests {
             .uri("/upstream///evil.com:8080/secret")
             .to_http_request();
 
-        let url = config.create_upstream_url(&req);
+        let url = upstream_url(&config, &req);
         assert!(
             url.starts_with("https://upstream.com/"),
             "host must always be upstream.com, got: {}",
@@ -582,6 +571,12 @@ mod tests {
             true,
             Some(Url::parse(connect).unwrap()),
         )
+    }
+
+    // Builds the upstream url using the config's S3 upstream as the base, the
+    // way a routed S3 request would.
+    fn upstream_url(config: &HttpConfig, req: &HttpRequest) -> String {
+        config.create_upstream_url(req, config.s3_upstream_base_url.as_ref().unwrap())
     }
 
     fn default_config(upstream_base_url: &str) -> HttpConfig {

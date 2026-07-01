@@ -1,5 +1,9 @@
 use super::*;
-use crate::http::utils::{partial_extractor::*, s3_helper::sign_request};
+use crate::http::utils::{
+    flavor::{route, Flavor},
+    partial_extractor::*,
+    s3_helper::sign_request,
+};
 use actix_files::HttpRange;
 use actix_web::web::Bytes;
 
@@ -9,7 +13,8 @@ pub async fn fetch(
     client: web::Data<Client>,
     config: web::Data<HttpConfig>,
 ) -> Result<HttpResponse, Error> {
-    let get_url = config.create_upstream_url(&req);
+    let (flavor, base) = route(&config, &req);
+    let get_url = config.create_upstream_url(&req, base);
 
     let mut fetch_req = client
         .request_from(get_url.clone(), req.head())
@@ -24,13 +29,12 @@ pub async fn fetch(
         fetch_req.headers_mut().remove(header);
     }
 
-    let req_to_send = if let Some(s3_config) = config.s3_config.clone() {
-        sign_request(fetch_req, s3_config)
-    } else {
-        fetch_req
+    let req_to_send = match (flavor, config.s3_config.clone()) {
+        (Flavor::S3, Some(s3_config)) => {
+            config.apply_s3_connect_url(sign_request(fetch_req, s3_config))
+        }
+        _ => fetch_req,
     };
-
-    let req_to_send = config.apply_s3_connect_url(req_to_send);
 
     let res = req_to_send.send_body(body).await.map_err(|e| {
         error!("fetch error {:?}, {:?}", e, req);
