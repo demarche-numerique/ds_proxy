@@ -86,7 +86,7 @@ pub async fn forward(
         forwarded_req
     };
 
-    let final_req = config.apply_connect_url(final_req);
+    let final_req = config.apply_s3_connect_url(final_req);
 
     let res_e = if let Some(length) = forward_length {
         final_req

@@ -44,7 +44,7 @@ pub struct HttpConfig {
     // Optional connect target: when set, the actual TCP connection is made to
     // this scheme/host/port instead of upstream_base_url, while the S3 signature
     // and the Host header still reference upstream_base_url
-    pub connect_base_url: Option<Url>,
+    pub s3_connect_base_url: Option<Url>,
     pub keyring: Keyring,
     pub address: SocketAddr,
     pub local_encryption_directory: PathBuf,
@@ -139,11 +139,12 @@ impl Config {
             let raw_upstream_base_url = string_from(&args.flag_upstream_url, "DS_UPSTREAM_URL");
             let upstream_base_url = normalize_and_parse_upstream_url(raw_upstream_base_url);
 
-            let connect_base_url = optional_string_from(&args.flag_connect_url, "DS_CONNECT_URL")
-                .map(|raw| Url::parse(&raw).expect("DS_CONNECT_URL is not a valid URL"));
-            if let Some(connect) = &connect_base_url {
+            let s3_connect_base_url =
+                optional_string_from(&args.flag_s3_connect_url, "DS_S3_CONNECT_URL")
+                    .map(|raw| Url::parse(&raw).expect("DS_S3_CONNECT_URL is not a valid URL"));
+            if let Some(connect) = &s3_connect_base_url {
                 log::info!(
-                    "connect_base_url: {} (upstream: {})",
+                    "s3_connect_base_url: {} (upstream: {})",
                     connect,
                     upstream_base_url
                 );
@@ -214,7 +215,7 @@ impl Config {
             Config::Http(HttpConfig {
                 keyring,
                 upstream_base_url,
-                connect_base_url,
+                s3_connect_base_url,
                 address,
                 local_encryption_directory,
                 s3_config,
@@ -288,13 +289,13 @@ impl HttpConfig {
     // Points an already-signed request at the connect target, if one is
     // configured. Only the dialed scheme/host/port change; the signature and the
     // Host header stay on the upstream.
-    pub fn apply_connect_url(&self, req: ClientRequest) -> ClientRequest {
+    pub fn apply_s3_connect_url(&self, req: ClientRequest) -> ClientRequest {
         let connection_url = self.connection_url(&req.get_uri().to_string());
         req.uri(connection_url)
     }
 
     fn connection_url(&self, upstream_url: &str) -> String {
-        match &self.connect_base_url {
+        match &self.s3_connect_base_url {
             None => upstream_url.to_string(),
             Some(connect) => {
                 let mut url = Url::parse(upstream_url).expect("upstream url should be valid");
@@ -478,7 +479,7 @@ mod tests {
 
         // With a connect target, only scheme/host/port are swapped; path and query stay.
         let mut connected = default_config("https://s3.sbg.io.cloud.ovh.net/");
-        connected.connect_base_url = Some(Url::parse("http://192.168.33.70:8006").unwrap());
+        connected.s3_connect_base_url = Some(Url::parse("http://192.168.33.70:8006").unwrap());
         assert_eq!(
             connected.connection_url(upstream),
             "http://192.168.33.70:8006/bucket/file?x=1"
@@ -486,7 +487,7 @@ mod tests {
 
         // A connect target without explicit port falls back to the scheme default.
         let mut connected_default_port = default_config("https://s3.sbg.io.cloud.ovh.net/");
-        connected_default_port.connect_base_url = Some(Url::parse("http://192.168.33.70").unwrap());
+        connected_default_port.s3_connect_base_url = Some(Url::parse("http://192.168.33.70").unwrap());
         assert_eq!(
             connected_default_port.connection_url(upstream),
             "http://192.168.33.70/bucket/file?x=1"
@@ -499,7 +500,7 @@ mod tests {
         HttpConfig {
             keyring,
             upstream_base_url: normalize_and_parse_upstream_url(upstream_base_url.to_string()),
-            connect_base_url: None,
+            s3_connect_base_url: None,
             address: "127.0.0.1:1234".to_socket_addrs().unwrap().next().unwrap(),
             local_encryption_directory: PathBuf::from(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY),
             s3_config: None,

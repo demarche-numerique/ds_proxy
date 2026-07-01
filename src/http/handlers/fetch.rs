@@ -30,7 +30,7 @@ pub async fn fetch(
         fetch_req
     };
 
-    let req_to_send = config.apply_connect_url(req_to_send);
+    let req_to_send = config.apply_s3_connect_url(req_to_send);
 
     let res = req_to_send.send_body(body).await.map_err(|e| {
         error!("fetch error {:?}, {:?}", e, req);

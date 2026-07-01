@@ -138,7 +138,7 @@ pub fn launch_proxy_with_connect_url(upstream_url: &str, connect_url: &str) -> C
         .arg("proxy")
         .arg("--address=localhost:4444")
         .arg(format!("--upstream-url={}", upstream_url))
-        .arg(format!("--connect-url={}", connect_url))
+        .arg(format!("--s3-connect-url={}", connect_url))
         .arg("--s3-access-key=key")
         .arg("--s3-secret-key=secret")
         .arg("--s3-region=region")

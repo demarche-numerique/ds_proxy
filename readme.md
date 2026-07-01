@@ -53,7 +53,7 @@ Environment=RUST_LOG="actix_web=info"
 ...
 ```
 
-#### Cible de connexion (`--connect-url`)
+#### Cible de connexion (`--s3-connect-url`)
 
 Par défaut, ds_proxy ouvre la connexion vers `--upstream_url` (qui sert aussi
 au calcul de la signature S3 et au header `Host`). Sur une machine sans accès
@@ -62,14 +62,14 @@ internet ni résolution DNS, on peut router le flux à travers un intermédiaire
 C'est la même idée que le `--connect-to` de curl :
 
 ```
---upstream_url 'https://s3.cloud.ovh.net' --connect-url 'http://192.168.1.2:3456'
+--upstream_url 'https://s3.cloud.ovh.net' --s3-connect-url 'http://192.168.1.2:3456'
 ```
 
 Dans ce cas la connexion TCP est faite vers `192.168.1.2:3456`, mais la
 signature et le `Host` restent `s3.cloud.ovh.net`. Seuls le schéma,
 l'hôte et le port de la cible de connexion sont utilisés ; le chemin et la query
 string viennent de l'upstream. Équivalent via variable d'environnement :
-`DS_CONNECT_URL`.
+`DS_S3_CONNECT_URL`.
 
 ### Garder le mot de passe en mémoire
 

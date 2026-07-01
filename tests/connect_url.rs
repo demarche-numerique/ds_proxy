@@ -5,11 +5,11 @@ pub use helpers::*;
 #[serial(servers)]
 fn connect_url_routes_the_connection_but_signs_for_upstream() {
     /*
-    This test proves the --connect-url mechanism end to end:
+    This test proves the --s3-connect-url mechanism end to end:
      - the upstream is set to an unreachable host (a reserved `.test` TLD on a
-       dead port): if --connect-url were ignored, the request could never reach
+       dead port): if --s3-connect-url were ignored, the request could never reach
        any backend
-     - --connect-url redirects the actual TCP connection to the node backend
+     - --s3-connect-url redirects the actual TCP connection to the node backend
        (localhost:3333), while the signature and the Host header must stay on the
        upstream
 

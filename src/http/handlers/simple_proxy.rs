@@ -24,7 +24,7 @@ pub async fn simple_proxy(
         proxied_req
     };
 
-    let req_to_send = config.apply_connect_url(req_to_send);
+    let req_to_send = config.apply_s3_connect_url(req_to_send);
 
     req_to_send
         .send_stream(payload)
