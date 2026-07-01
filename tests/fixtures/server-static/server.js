@@ -95,4 +95,10 @@ const add_metadata = function (res, path, stat) {
 
 app.use(chunked_static);
 app.use(express.static(__dirname + '/uploads', { setHeaders: add_metadata }));
-app.listen(3333);
+
+// Listen on a configurable port (default 3333) so several backends can run
+// side by side, e.g. an S3 upstream and a Swift upstream in dual-mode tests.
+// Usage: node server.js --port=3334
+let portArg = process.argv.slice(2).find(arg => arg.startsWith('--port='));
+let port = portArg ? parseInt(portArg.split('=')[1], 10) : 3333;
+app.listen(port);

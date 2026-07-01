@@ -45,6 +45,45 @@ pub fn curl_put(file_path: &str, url: &str) -> Output {
     cmd
 }
 
+pub fn curl_put_with_headers(file_path: &str, url: &str, headers: &[&str]) -> Output {
+    let mut command = Command::new("curl");
+    command
+        .arg("-XPUT")
+        .arg(url)
+        .arg("--data-binary")
+        .arg(format!("@{}", file_path));
+
+    for header in headers {
+        command.arg("-H").arg(header);
+    }
+
+    let cmd = command.output().expect("failed to perform upload");
+
+    // add sleep to let node write the file on the disk
+    thread::sleep(time::Duration::from_millis(100));
+
+    if !cmd.status.success() {
+        panic!("unable to upload file {}", url);
+    }
+
+    cmd
+}
+
+// Reads the headers of the last PUT received by the node backend listening on
+// the given port. Each backend process keeps its own last_put_headers, so this
+// tells which upstream a request was routed to.
+pub fn node_received_header_on_port(port: u16, header: &str) -> Option<String> {
+    let url = format!("localhost:{}/last_put_headers", port);
+    let last_put_headers = curl_get(&url).stdout;
+    let last_put_headers_string = String::from_utf8_lossy(&last_put_headers);
+
+    use serde_json::Value;
+    let lookup: std::collections::HashMap<String, Value> =
+        serde_json::from_str(&last_put_headers_string).unwrap();
+
+    lookup.get(header).map(|h| h.to_string())
+}
+
 pub fn curl_get_content_length_header(url: &str) -> usize {
     let response = curl_get_headers(url);
 

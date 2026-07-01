@@ -175,6 +175,67 @@ pub fn launch_node_with_latency(latency: Option<Duration>, log: PrintServerLogs)
     }
 }
 
+pub fn launch_node_on_port(port: u16, log: PrintServerLogs) -> ChildGuard {
+    let mut command = Command::new("node");
+    command
+        .arg("tests/fixtures/server-static/server.js")
+        .arg(format!("--port={}", port));
+
+    if let PrintServerLogs::Yes = log {
+        command.env("DEBUG", "express:*");
+    }
+
+    let child = command.spawn().expect("failed to execute node");
+    ChildGuard {
+        child,
+        description: "node",
+    }
+}
+
+pub fn launch_proxy_dual(s3_upstream: &str, swift_upstream: &str) -> ChildGuard {
+    let mut command = Command::new(cargo::cargo_bin!("ds_proxy"));
+    command
+        .arg("proxy")
+        .arg("--address=localhost:4444")
+        .arg(format!("--s3-upstream-url={}", s3_upstream))
+        .arg(format!("--swift-upstream-url={}", swift_upstream))
+        .arg("--s3-access-key=key")
+        .arg("--s3-secret-key=secret")
+        .arg("--s3-region=region")
+        .arg("--bypass-s3-signature-check")
+        .env("DS_KEYRING", DS_KEYRING)
+        .env("DS_PASSWORD", PASSWORD);
+
+    let child = command.spawn().expect("failed to execute ds_proxy");
+    ChildGuard {
+        child,
+        description: "ds_proxy",
+    }
+}
+
+// A proxy in dual mode fronting two distinct backends: an S3 upstream on :3333
+// and a Swift upstream on :3334.
+#[allow(dead_code)]
+pub struct DualServers {
+    proxy: ChildGuard,
+    s3_node: ChildGuard,
+    swift_node: ChildGuard,
+}
+
+impl DualServers {
+    pub fn start(s3_upstream: &str, swift_upstream: &str) -> DualServers {
+        let s3_node = launch_node_on_port(3333, PrintServerLogs::No);
+        let swift_node = launch_node_on_port(3334, PrintServerLogs::No);
+        let proxy = launch_proxy_dual(s3_upstream, swift_upstream);
+        thread::sleep(time::Duration::from_secs(4));
+        DualServers {
+            proxy,
+            s3_node,
+            swift_node,
+        }
+    }
+}
+
 pub struct ChildGuard {
     pub child: Child,
     description: &'static str,
