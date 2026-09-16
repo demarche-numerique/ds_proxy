@@ -119,7 +119,28 @@ fn presigned_url(all_params: &HashMap<String, String>) -> bool {
     all_params.contains_key("x-amz-signature")
 }
 
-fn extract_signed_pairs(all_params: &HashMap<String, String>) -> Vec<(String, String)> {
+/// The `x-amz-*` request headers the client left out of `SignedHeaders`.
+///
+/// S3 refuses such requests ("There were headers present in the request
+/// which were not signed"), and so must the proxy: it re-signs every
+/// `x-amz-*` header with its own credentials, so an unsigned one would
+/// otherwise be laundered into a trusted one (e.g. `x-amz-copy-source`).
+/// `x-amz-content-sha256` is tolerated unsigned, as S3 does.
+pub fn unsigned_amz_headers(request: &HttpRequest) -> Vec<String> {
+    let all_params = extract_query_and_header_params(request);
+    let signed = signed_header_names(&all_params);
+
+    request
+        .headers()
+        .keys()
+        .map(|k| k.as_str())
+        .filter(|name| name.starts_with("x-amz-") && *name != "x-amz-content-sha256")
+        .filter(|name| !signed.iter().any(|s| s == name))
+        .map(str::to_string)
+        .collect()
+}
+
+fn signed_header_names(all_params: &HashMap<String, String>) -> Vec<String> {
     let header_list = if presigned_url(all_params) {
         all_params
             .get("x-amz-signedheaders")
@@ -136,9 +157,13 @@ fn extract_signed_pairs(all_params: &HashMap<String, String>) -> Vec<(String, St
             .trim_start_matches("SignedHeaders=")
     };
 
-    header_list
-        .split(';')
-        .filter_map(|h| all_params.get(h).map(|v| (h.to_string(), v.clone())))
+    header_list.split(';').map(|h| h.to_lowercase()).collect()
+}
+
+fn extract_signed_pairs(all_params: &HashMap<String, String>) -> Vec<(String, String)> {
+    signed_header_names(all_params)
+        .into_iter()
+        .filter_map(|h| all_params.get(&h).map(|v| (h, v.clone())))
         .collect()
 }
 
@@ -264,6 +289,80 @@ mod tests {
         let now = to_utc_datetime("20251118T135750Z");
 
         assert!(is_signature_valid_with_date(&request, config(), now));
+    }
+
+    // Valid signature over host;range;x-amz-checksum-mode;x-amz-content-sha256;x-amz-date
+    // (same as multiple_signed_headers), plus headers the client did not sign.
+    #[test]
+    fn unsigned_amz_headers_are_reported_with_authorization_header() {
+        let uri =
+            "/upstream/drive-media-storage/item/969fd250-d647-48d7-a0b9-705f2cf4069c/test.txt";
+
+        let request = TestRequest::get()
+            .uri(uri)
+            .insert_header(("authorization", "AWS4-HMAC-SHA256 Credential=an_access_key/20251118/eu-west-1/s3/aws4_request, SignedHeaders=host;range;x-amz-checksum-mode;x-amz-content-sha256;x-amz-date, Signature=df8a2df04aea3cec93826f42a38e55a13f74b63680fada05d5203cb05df9fbef"))
+            .insert_header(("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+            .insert_header(("x-amz-checksum-mode", "ENABLED"))
+            .insert_header(("range", "bytes=0-2047"))
+            .insert_header(("x-amz-date", "20251118T135750Z"))
+            .insert_header(("host", "c0f16bdf2fc8.ngrok-free.app"))
+            // not signed: must be reported
+            .insert_header(("x-amz-copy-source", "/bucket/someone-else/secret.pdf"))
+            // not signed either, but not an x-amz- header: must be ignored
+            .insert_header(("x-amzn-trace-id", "Root=1-5759e988-bd862e3fe1be46a994272793"))
+            .insert_header(("content-type", "text/plain"))
+            .to_http_request();
+
+        let now = to_utc_datetime("20251118T135750Z");
+        assert!(is_signature_valid_with_date(&request, config(), now));
+
+        assert_eq!(
+            unsigned_amz_headers(&request),
+            vec!["x-amz-copy-source".to_string()]
+        );
+    }
+
+    #[test]
+    fn signed_amz_headers_are_not_reported() {
+        let request = TestRequest::get()
+            .uri("/upstream/drive-media-storage/item/969fd250-d647-48d7-a0b9-705f2cf4069c/test.txt")
+            .insert_header(("authorization", "AWS4-HMAC-SHA256 Credential=an_access_key/20251118/eu-west-1/s3/aws4_request, SignedHeaders=host;range;x-amz-checksum-mode;x-amz-content-sha256;x-amz-date, Signature=df8a2df04aea3cec93826f42a38e55a13f74b63680fada05d5203cb05df9fbef"))
+            .insert_header(("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+            .insert_header(("x-amz-checksum-mode", "ENABLED"))
+            .insert_header(("range", "bytes=0-2047"))
+            .insert_header(("x-amz-date", "20251118T135750Z"))
+            .insert_header(("host", "c0f16bdf2fc8.ngrok-free.app"))
+            .to_http_request();
+
+        assert!(unsigned_amz_headers(&request).is_empty());
+    }
+
+    // Presigned URL signed over host;x-amz-acl (same as presigned_put).
+    // x-amz-content-sha256 is tolerated unsigned, any other x-amz- header is not.
+    #[test]
+    fn unsigned_amz_headers_are_reported_with_presigned_url() {
+        let uri = "/upstream/drive-media-storage/item/2b5a76ad-4bfb-4f32-9b6d-ebdd999d3711/test.txt?x-amz-algorithm=AWS4-HMAC-SHA256&x-amz-signature=1695606b1548dc5e8819c3a0276951ac12fb3ef58861d3f31d05c8359a06b1ef&x-amz-credential=an_access_key%2F20251113%2Feu-west-1%2Fs3%2Faws4_request&x-amz-date=20251113T155445Z&x-amz-expires=60&x-amz-signedheaders=host%3Bx-amz-acl";
+
+        let request = TestRequest::put()
+            .uri(uri)
+            .insert_header(("host", "localhost:4444"))
+            .insert_header(("x-amz-acl", "private"))
+            .insert_header(("x-amz-content-sha256", "UNSIGNED-PAYLOAD"))
+            .to_http_request();
+
+        assert!(unsigned_amz_headers(&request).is_empty());
+
+        let request = TestRequest::put()
+            .uri(uri)
+            .insert_header(("host", "localhost:4444"))
+            .insert_header(("x-amz-acl", "private"))
+            .insert_header(("x-amz-tagging", "owner=attacker"))
+            .to_http_request();
+
+        assert_eq!(
+            unsigned_amz_headers(&request),
+            vec!["x-amz-tagging".to_string()]
+        );
     }
 
     #[test]

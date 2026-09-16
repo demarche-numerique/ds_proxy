@@ -54,10 +54,12 @@ fn sign_request_with_time(
         .insert_header(("x-amz-content-sha256", "UNSIGNED-PAYLOAD"))
         .insert_header(("host", host));
 
+    // Only `x-amz-` headers are signed: `x-amzn-trace-id` shares the prefix
+    // but is deliberately left unsigned by the AWS SDKs.
     let s3_headers = req
         .headers()
         .iter()
-        .filter(|(k, _)| k.as_str().to_lowercase().starts_with("x-amz"))
+        .filter(|(k, _)| k.as_str().to_lowercase().starts_with("x-amz-"))
         .map(|(k, v)| (k.as_str(), v.to_str().unwrap_or("")));
 
     let signable_request = SignableRequest::new(
@@ -168,6 +170,26 @@ mod tests {
             signed.headers().get("x-amz-content-sha256").unwrap(),
             "UNSIGNED-PAYLOAD"
         );
+        assert_eq!(signed.headers().get("authorization").unwrap(), "AWS4-HMAC-SHA256 Credential=an_access_key/20251201/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=7d6f290a9a6c9f298c13978e0521168756fe07e105de79238f24e40879e704f0");
+    }
+
+    // Same request as test_sign_request plus a trace header: it must not enter
+    // the signature, so the SignedHeaders and the signature stay identical.
+    #[test]
+    fn test_sign_request_leaves_x_amzn_trace_id_unsigned() {
+        let uri = "https://s3-eu-west-1.amazonaws.com/drive-media-storage/item/12c3368f-884b-4bee-9779-10412cf05586/une%20image.png";
+
+        let request = awc::Client::new().get(uri).insert_header((
+            "x-amzn-trace-id",
+            "Root=1-5759e988-bd862e3fe1be46a994272793",
+        ));
+        let date_str = "20251201T145423Z";
+
+        let naive = NaiveDateTime::parse_from_str(date_str, "%Y%m%dT%H%M%SZ").unwrap();
+        let time_now: SystemTime = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc).into();
+
+        let signed = sign_request_with_time(request, config(), time_now);
+
         assert_eq!(signed.headers().get("authorization").unwrap(), "AWS4-HMAC-SHA256 Credential=an_access_key/20251201/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=7d6f290a9a6c9f298c13978e0521168756fe07e105de79238f24e40879e704f0");
     }
 
