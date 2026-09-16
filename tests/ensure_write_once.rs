@@ -149,6 +149,67 @@ mod tests {
         }
     }
 
+    // The lock is keyed on the resolved path: dot segments, encoded or not, do
+    // not open a second write on the same object.
+    #[actix_web::test]
+    #[serial(servers)]
+    async fn test_ensure_write_once_blocks_dot_segment_spellings_of_a_path() {
+        let _redis_process = launch_redis_with_delay();
+
+        let config = RedisConfig {
+            url: Url::parse("redis://127.0.0.1:5555").unwrap(),
+            ..RedisConfig::default()
+        };
+        let redis_pool = configure_redis_pool(config).await;
+
+        let mut actix_app = App::new().service(
+            resource("/{tail}*")
+                .guard(Get())
+                .wrap(from_fn(ensure_write_once))
+                .to(mock_success),
+        );
+
+        actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool.clone())));
+
+        match redis_pool.get().await {
+            Ok(mut conn) => {
+                let _: () = conn
+                    .del(WriteOnceService::hash_key("/bucket/item/file"))
+                    .await
+                    .unwrap();
+            }
+            Err(_err) => panic!("Failed to get Redis connection"),
+        }
+
+        let app = test::init_service(actix_app).await;
+
+        // First request: should pass and lock the path
+        let req = test::TestRequest::get()
+            .uri("/bucket/item/file?X-Amz-Expires=60&X-Amz-Signature=abc")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        let bypass_attempts = [
+            "/bucket/item/./file?X-Amz-Expires=60&X-Amz-Signature=abc",
+            "/bucket/./item/file?X-Amz-Expires=60&X-Amz-Signature=abc",
+            "/bucket/item/%2e/file?X-Amz-Expires=60&X-Amz-Signature=abc",
+            "/bucket/item/%2E/file?X-Amz-Expires=60&X-Amz-Signature=abc",
+            "/bucket/item/../item/file?X-Amz-Expires=60&X-Amz-Signature=abc",
+            "/bucket/item/%2e%2e/item/file?X-Amz-Expires=60&X-Amz-Signature=abc",
+            "/bucket/other/../item/file?X-Amz-Expires=60&X-Amz-Signature=abc",
+        ];
+
+        for uri in bypass_attempts {
+            let req = test::TestRequest::get().uri(uri).to_request();
+            let resp = test::try_call_service(&app, req).await;
+            match resp {
+                Ok(resp) => panic!("Expected 403 for {}, got {}", uri, resp.status()),
+                Err(err) => assert_eq!(err.error_response().status(), 403, "for {}", uri),
+            }
+        }
+    }
+
     #[actix_web::test]
     #[serial(servers)]
     async fn test_ensure_write_once_skips_private_uri() {
