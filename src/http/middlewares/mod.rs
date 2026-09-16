@@ -2,7 +2,7 @@ use super::super::config::HttpConfig;
 use super::utils::flavor::{detect_flavor, Flavor};
 use super::utils::verify_signature::{is_signature_valid, unsigned_amz_headers};
 use crate::write_once_service::WriteOnceService;
-use actix_web::http::Method;
+use actix_web::http::{Method, Uri};
 use actix_web::{
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
@@ -11,6 +11,7 @@ use actix_web::{
     web, Error,
 };
 use std::path::Path;
+use url::Url;
 
 pub async fn ensure_write_once(
     req: ServiceRequest,
@@ -35,7 +36,7 @@ pub async fn ensure_write_once(
         .unwrap()
         .clone();
 
-    let path = uri.path().to_owned();
+    let path = normalized_path(uri);
 
     // key was set before, early return and deny access because we only write once
     match write_once_service.lock(&path).await {
@@ -62,6 +63,17 @@ pub async fn ensure_write_once(
     }
 
     result
+}
+
+// The lock must hold on the object the request actually addresses. Both the
+// signature check (HttpRequest::full_url) and the upstream URL go through
+// url::Url, which resolves `.` and `..` segments, percent-encoded or not. Key
+// the lock on that same resolved path, so that every spelling of a path
+// shares one lock. Any other path comes out unchanged.
+fn normalized_path(uri: &Uri) -> String {
+    Url::parse(&format!("http://ds-proxy{}", uri.path()))
+        .map(|url| url.path().to_owned())
+        .unwrap_or_else(|_| uri.path().to_owned())
 }
 
 pub async fn verify_s3_signature(
