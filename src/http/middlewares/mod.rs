@@ -1,6 +1,6 @@
 use super::super::config::HttpConfig;
 use super::utils::flavor::{detect_flavor, Flavor};
-use super::utils::verify_signature::is_signature_valid;
+use super::utils::verify_signature::{is_signature_valid, unsigned_amz_headers};
 use crate::write_once_service::WriteOnceService;
 use actix_web::http::Method;
 use actix_web::{
@@ -80,15 +80,29 @@ pub async fn verify_s3_signature(
     let is_s3_request = !config.dual || detect_flavor(service_request.request()) == Flavor::S3;
 
     if let Some(s3_config) = config.s3_config.clone() {
-        if is_s3_request
-            && !s3_config.bypass_signature_check
-            && !is_signature_valid(service_request.request(), s3_config)
-        {
-            log::warn!(
-                "Invalid S3 signature for request: {}",
-                service_request.uri()
-            );
-            return Err(ErrorUnauthorized("Invalid S3 signature"));
+        if is_s3_request && !s3_config.bypass_signature_check {
+            if !is_signature_valid(service_request.request(), s3_config) {
+                log::warn!(
+                    "Invalid S3 signature for request: {}",
+                    service_request.uri()
+                );
+                return Err(ErrorUnauthorized("Invalid S3 signature"));
+            }
+
+            // The signature only vouches for the headers the client signed.
+            // Every other x-amz- header would be re-signed by the proxy with
+            // its own credentials, so refuse them like S3 does.
+            let unsigned = unsigned_amz_headers(service_request.request());
+            if !unsigned.is_empty() {
+                log::warn!(
+                    "Unsigned x-amz- headers {:?} for request: {}",
+                    unsigned,
+                    service_request.uri()
+                );
+                return Err(ErrorForbidden(
+                    "There were headers present in the request which were not signed",
+                ));
+            }
         }
     }
 
