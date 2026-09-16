@@ -17,7 +17,11 @@ fn is_signature_valid_with_date(
     s3_config: S3Config,
     now: DateTime<Utc>,
 ) -> bool {
-    log::info!("Verifying signature for request: {:?}", &request);
+    log::info!(
+        "Verifying signature for {} {}",
+        request.method(),
+        request.path()
+    );
 
     let all_params = extract_query_and_header_params(request);
 
