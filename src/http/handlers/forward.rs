@@ -97,14 +97,24 @@ pub async fn forward(
     };
 
     let mut res = res_e.map_err(|e| {
-        error!("forward fwk error {:?}, {:?}", e, req);
+        error!(
+            "forward fwk error {:?} for {} {}",
+            e,
+            req.method(),
+            req.path()
+        );
         actix_web::error::ErrorBadGateway(e)
     })?;
 
     trace!("backend response for PUT {:?} : {:?}", put_url, res);
 
     if res.status().is_client_error() || res.status().is_server_error() {
-        error!("forward status error {:?} {:?}", req, res);
+        error!(
+            "forward status error {} for {} {}",
+            res.status(),
+            req.method(),
+            req.path()
+        );
     }
 
     let mut client_resp = HttpResponse::build(res.status());

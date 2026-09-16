@@ -31,12 +31,22 @@ pub async fn simple_proxy(
         .send_stream(payload)
         .await
         .map_err(|e| {
-            error!("simple proxy fwk error {:?}, {:?}", e, req);
+            error!(
+                "simple proxy fwk error {:?} for {} {}",
+                e,
+                req.method(),
+                req.path()
+            );
             actix_web::error::ErrorBadGateway(e)
         })
         .map(|res| {
             if res.status().is_client_error() || res.status().is_server_error() {
-                error!("simple proxy status error {:?} {:?}", req, res);
+                error!(
+                    "simple proxy status error {} for {} {}",
+                    res.status(),
+                    req.method(),
+                    req.path()
+                );
             }
 
             let mut client_resp = HttpResponse::build(res.status());

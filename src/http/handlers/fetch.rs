@@ -38,7 +38,7 @@ pub async fn fetch(
     };
 
     let res = req_to_send.send_body(body).await.map_err(|e| {
-        error!("fetch error {:?}, {:?}", e, req);
+        error!("fetch error {:?} for {} {}", e, req.method(), req.path());
         match e {
             awc::error::SendRequestError::Timeout => actix_web::error::ErrorGatewayTimeout(e),
             _ => actix_web::error::ErrorBadGateway(e),
@@ -48,7 +48,12 @@ pub async fn fetch(
     trace!("backend response for GET {:?} : {:?}", get_url, res);
 
     if res.status().is_client_error() || res.status().is_server_error() {
-        error!("fetch status error {:?} {:?}", req, res);
+        error!(
+            "fetch status error {} for {} {}",
+            res.status(),
+            req.method(),
+            req.path()
+        );
     }
 
     let upstream_status = res.status();
