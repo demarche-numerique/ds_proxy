@@ -139,6 +139,13 @@ produit, pas seulement un correctif.
   et la garantie apportée, jamais la marche à suivre pour exploiter le
   défaut.
 - Un correctif de sécurité arrive avec le test qui échoue sans lui.
+- Écrire le code le plus simple qui passe les tests. Une abstraction, un
+  garde, une tâche de fond ou un cas limite ne se justifie que par un
+  comportement démontré, en lisant les sources du framework ou par un test
+  qui reproduit le cas réel, jamais par un cas supposé. Une piste issue d'un
+  rapport ou d'une revue se vérifie avant d'être codée. Une optimisation qui
+  coûte en lisibilité, comme éviter une allocation sur un chemin rare, se
+  justifie par une mesure, sinon on prend la forme lisible.
 
 ## Vérifications
 
