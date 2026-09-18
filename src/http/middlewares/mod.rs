@@ -45,7 +45,16 @@ pub async fn ensure_write_once(
             log::warn!("Access denied: Redis key already exists: {}", path);
             return Err(ErrorForbidden("Access denied"));
         }
-        Err(_) => {} // don't mind about redis errors
+        // Redis unavailable: the request goes through unguarded. Say so
+        // loudly, since write-once is silently suspended for as long as
+        // this lasts.
+        Err(err) => {
+            log::error!(
+                "write-once lock unavailable, letting {} through unguarded: {}",
+                path,
+                err
+            );
+        }
     }
 
     // proceed with the request
