@@ -23,6 +23,10 @@ pub async fn mock_found() -> HttpResponse {
     response.body("Redirecting...")
 }
 
+pub async fn mock_bad_gateway() -> Result<HttpResponse, actix_web::Error> {
+    Err(actix_web::error::ErrorBadGateway("upstream unreachable"))
+}
+
 fn launch_redis_with_delay() -> ChildGuard {
     let redis = launch_redis(PrintServerLogs::No);
     thread::sleep(std::time::Duration::from_secs(4));
@@ -152,6 +156,41 @@ mod tests {
                 Ok(resp) => panic!("Expected 403 for {}, got {}", uri, resp.status()),
                 Err(err) => assert_eq!(err.error_response().status(), 403),
             }
+        }
+    }
+
+    // A proxy-side failure (502 from an unreachable upstream) stored nothing:
+    // the credential stays usable.
+    #[actix_web::test]
+    #[serial(servers)]
+    async fn test_ensure_write_once_unlocks_on_handler_error() {
+        let _redis_process = launch_redis_with_delay();
+        let config = RedisConfig {
+            url: Url::parse("redis://127.0.0.1:5555").unwrap(),
+            ..RedisConfig::default()
+        };
+        let redis_pool = configure_redis_pool(config).await;
+
+        let mut actix_app = App::new().service(
+            resource("/error-path")
+                .guard(Get())
+                .wrap(from_fn(ensure_write_once))
+                .to(mock_bad_gateway),
+        );
+        actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool)));
+        let app = test::init_service(actix_app).await;
+
+        for _ in 0..2 {
+            let req = test::TestRequest::get()
+                .uri("/error-path?temp_url_expires=1234567890")
+                .to_request();
+            // actix turns the handler error into a plain 502 response; the
+            // second attempt must get the same 502, not a 403 from the lock
+            let status = match test::try_call_service(&app, req).await {
+                Ok(resp) => resp.status(),
+                Err(err) => err.error_response().status(),
+            };
+            assert_eq!(status, 502);
         }
     }
 

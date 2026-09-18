@@ -41,8 +41,8 @@ pub async fn ensure_write_once(
     let path = normalized_path(uri);
 
     // key was set before, early return and deny access because we only write once
-    match write_once_service.lock(&path, lock_duration).await {
-        Ok(true) => {}
+    let locked = match write_once_service.lock(&path, lock_duration).await {
+        Ok(true) => true,
         Ok(false) => {
             log::warn!("Access denied: Redis key already exists: {}", path);
             return Err(ErrorForbidden("Access denied"));
@@ -56,20 +56,20 @@ pub async fn ensure_write_once(
                 path,
                 err
             );
+            false
         }
-    }
+    };
 
     // proceed with the request
     let result = next.call(req).await;
-    if let Ok(ref response) = result {
-        if !response.status().is_success() {
-            if let Err(err) = write_once_service.unlock(&path).await {
-                log::error!(
-                    "Failed to mark as locked with expiration: {}. Error: {}",
-                    path,
-                    err
-                );
-            }
+
+    // Only a successful upstream answer consumes the lock. Anything else
+    // (upstream refusal, proxy error) stored nothing, so the credential
+    // must stay usable.
+    let succeeded = matches!(&result, Ok(response) if response.status().is_success());
+    if locked && !succeeded {
+        if let Err(err) = write_once_service.unlock(&path).await {
+            log::error!("Failed to release write-once lock on {}: {}", path, err);
         }
     }
 
