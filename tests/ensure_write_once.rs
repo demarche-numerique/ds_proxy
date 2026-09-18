@@ -155,6 +155,55 @@ mod tests {
         }
     }
 
+    // The lock outlives the credential: a URL presigned for seven days keeps
+    // its path locked for seven days (plus the signature grace), not one hour.
+    #[actix_web::test]
+    #[serial(servers)]
+    async fn test_ensure_write_once_lock_lasts_as_long_as_the_presigned_url() {
+        let _redis_process = launch_redis_with_delay();
+
+        let config = RedisConfig {
+            url: Url::parse("redis://127.0.0.1:5555").unwrap(),
+            ..RedisConfig::default()
+        };
+        let redis_pool = configure_redis_pool(config).await;
+
+        let mut actix_app = App::new().service(
+            resource("/week-path")
+                .guard(Get())
+                .wrap(from_fn(ensure_write_once))
+                .to(mock_success),
+        );
+
+        actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool.clone())));
+
+        let key = WriteOnceService::hash_key("/week-path");
+        let mut conn = redis_pool
+            .get()
+            .await
+            .expect("Failed to get Redis connection");
+        let _: () = conn.del(&key).await.unwrap();
+
+        let app = test::init_service(actix_app).await;
+
+        let date = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let uri = format!(
+            "/week-path?X-Amz-Date={}&X-Amz-Expires=604800&X-Amz-Signature=abc",
+            date
+        );
+        let req = test::TestRequest::get().uri(&uri).to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        let ttl: i64 = conn.ttl(&key).await.unwrap();
+        // seven days plus the 15 minute grace, minus the seconds this test took
+        assert!(
+            ttl > 604800 + 900 - 60 && ttl <= 604800 + 900,
+            "lock ttl should follow the presigned validity, got {}",
+            ttl
+        );
+    }
+
     // The lock is keyed on the resolved path: dot segments, encoded or not, do
     // not open a second write on the same object.
     #[actix_web::test]

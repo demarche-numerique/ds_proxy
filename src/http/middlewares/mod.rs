@@ -11,6 +11,7 @@ use actix_web::{
     middleware::Next,
     web, Error,
 };
+use chrono::Utc;
 use std::path::Path;
 use url::Url;
 
@@ -23,9 +24,14 @@ pub async fn ensure_write_once(
     // Only guard presigned/user-facing writes: Swift TempURLs and S3
     // presigned URLs, recognised on decoded query keys. Both flavors are
     // covered so write-once holds in dual mode too.
-    if !PresignedQuery::parse(uri.query()).is_presigned() {
+    let presigned = PresignedQuery::parse(uri.query());
+    if !presigned.is_presigned() {
         return next.call(req).await;
     }
+
+    // The lock must outlive the credential, or the URL becomes replayable
+    // again once the lock expires.
+    let lock_duration = presigned.lock_duration(Utc::now());
 
     let write_once_service = req
         .app_data::<web::Data<WriteOnceService>>()
@@ -35,7 +41,7 @@ pub async fn ensure_write_once(
     let path = normalized_path(uri);
 
     // key was set before, early return and deny access because we only write once
-    match write_once_service.lock(&path).await {
+    match write_once_service.lock(&path, lock_duration).await {
         Ok(true) => {}
         Ok(false) => {
             log::warn!("Access denied: Redis key already exists: {}", path);
