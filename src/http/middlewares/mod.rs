@@ -1,5 +1,6 @@
 use super::super::config::HttpConfig;
 use super::utils::flavor::{detect_flavor, Flavor};
+use super::utils::presigned::PresignedQuery;
 use super::utils::verify_signature::{is_signature_valid, unsigned_amz_headers};
 use crate::write_once_service::WriteOnceService;
 use actix_web::http::{Method, Uri};
@@ -19,15 +20,10 @@ pub async fn ensure_write_once(
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
     let uri = req.uri();
 
-    // Only guard presigned/user-facing writes: Swift TempURL (temp_url_expires)
-    // and S3 presigned URLs (x-amz-expires). Both flavors are covered so
-    // write-once holds in dual mode too.
-    let user_facing_uri = uri.query().is_some_and(|query| {
-        let query = query.to_ascii_lowercase();
-        query.contains("temp_url_expires") || query.contains("x-amz-expires")
-    });
-
-    if !user_facing_uri {
+    // Only guard presigned/user-facing writes: Swift TempURLs and S3
+    // presigned URLs, recognised on decoded query keys. Both flavors are
+    // covered so write-once holds in dual mode too.
+    if !PresignedQuery::parse(uri.query()).is_presigned() {
         return next.call(req).await;
     }
 

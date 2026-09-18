@@ -81,6 +81,9 @@ mod tests {
             "/test-path?a=1&temp_url_expires=1234567890", // reordered
             "/test-path?temp_url_expires=1234567890&toto=plop1", // extra param
             "/test-path?temp_url_expires=9999999999",     // different values
+            "/test-path?temp_url%5Fexpires=1234567890",   // encoded key
+            "/test-path?temp_url_sig=abc",                // signature only
+            "/test-path?temp%5Furl%5Fsig=abc",            // encoded signature key
         ];
 
         for uri in bypass_attempts {
@@ -133,10 +136,13 @@ mod tests {
         assert_eq!(resp.status(), 200);
 
         // Subsequent presigned writes on the same path are denied, whatever the
-        // parameter casing.
+        // parameter casing or encoding.
         let bypass_attempts = [
             "/s3-path?X-Amz-Expires=60&X-Amz-Signature=abc", // identical
             "/s3-path?x-amz-expires=60&x-amz-signature=def", // lowercased
+            "/s3-path?X-Amz%2DExpires=60&X-Amz-Signature=abc", // encoded expiry key
+            "/s3-path?X-Amz%2DExpires=60&X-Amz%2DSignature=abc", // both keys encoded
+            "/s3-path?X-Amz-Signature=abc",                  // signature without expiry
         ];
 
         for uri in bypass_attempts {
