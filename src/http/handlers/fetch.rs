@@ -47,6 +47,8 @@ pub async fn fetch(
 
     trace!("backend response for GET {:?} : {:?}", get_url, res);
 
+    refuse_redirect(&req, res.status())?;
+
     if res.status().is_client_error() || res.status().is_server_error() {
         error!(
             "fetch status error {} for {} {}",

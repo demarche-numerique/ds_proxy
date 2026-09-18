@@ -6,7 +6,26 @@ const express = require('express');
 const app = express();
 const { Readable } = require('stream');
 
+// Listen on a configurable port (default 3333) so several backends can run
+// side by side, e.g. an S3 upstream and a Swift upstream in dual-mode tests.
+// Usage: node server.js --port=3334
+let portArg = process.argv.slice(2).find(arg => arg.startsWith('--port='));
+let port = portArg ? parseInt(portArg.split('=')[1], 10) : 3333;
+
 let last_put_headers = {};
+
+// Any request under a `redirect/` segment is answered with a 307 to a real
+// object path, the way S3 answers a TemporaryRedirect. The proxy must not
+// follow it (it would resend the body empty) nor relay it.
+app.all('*', function(req, res, next) {
+  if (!req.path.includes('/redirect/')) {
+    return next();
+  }
+
+  const target = req.path.replace('/redirect/', '/redirected/');
+  res.writeHead(307, {'Location': 'http://localhost:' + port + target});
+  res.end();
+});
 
 app.put('*', function(req, res) {
   last_put_headers = req.headers;
@@ -99,6 +118,4 @@ app.use(express.static(__dirname + '/uploads', { setHeaders: add_metadata }));
 // Listen on a configurable port (default 3333) so several backends can run
 // side by side, e.g. an S3 upstream and a Swift upstream in dual-mode tests.
 // Usage: node server.js --port=3334
-let portArg = process.argv.slice(2).find(arg => arg.startsWith('--port='));
-let port = portArg ? parseInt(portArg.split('=')[1], 10) : 3333;
 app.listen(port);

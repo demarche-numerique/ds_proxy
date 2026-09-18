@@ -108,6 +108,8 @@ pub async fn forward(
 
     trace!("backend response for PUT {:?} : {:?}", put_url, res);
 
+    refuse_redirect(&req, res.status())?;
+
     if res.status().is_client_error() || res.status().is_server_error() {
         error!(
             "forward status error {} for {} {}",

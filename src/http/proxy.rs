@@ -43,6 +43,8 @@ pub async fn main(config: HttpConfig) -> std::io::Result<()> {
                 awc::Client::builder()
                     .connector(awc_connector)
                     .timeout(RESPONSE_TIMEOUT) // the total time before a response must be received
+                    // a redirect from the upstream is refused by the handlers, never followed
+                    .disable_redirects()
                     .finish(),
             ))
             .app_data(Data::new(config.clone()))

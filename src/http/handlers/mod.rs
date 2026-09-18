@@ -16,7 +16,7 @@ pub use simple_proxy::simple_proxy;
 use super::super::config::HttpConfig;
 use super::super::crypto::*;
 use super::utils::*;
-use actix_web::http::header;
+use actix_web::http::{header, StatusCode};
 use actix_web::{web, Error, HttpRequest, HttpResponse};
 use awc::Client;
 use futures::stream::Stream;
@@ -39,3 +39,35 @@ pub static FETCH_REQUEST_HEADERS_TO_REMOVE: [header::HeaderName; 2] = [
     header::CONNECTION,
     header::RANGE,
 ];
+
+// An upstream redirect on an encrypting path (fetch, forward) is neither
+// followed nor relayed. Following it would resend the body empty or turn
+// the request into a GET; relaying its Location would send the client to
+// the upstream directly, around the encryption. Nothing was stored, so
+// answer 502 and say so in the logs. simple_proxy transforms nothing and
+// relays a redirect like any other answer.
+//
+// Only the statuses that carry a Location count: 304 Not Modified is also
+// a 3xx, and a conditional GET must still get it.
+pub fn refuse_redirect(req: &HttpRequest, status: StatusCode) -> Result<(), Error> {
+    let is_redirect = matches!(
+        status,
+        StatusCode::MOVED_PERMANENTLY
+            | StatusCode::FOUND
+            | StatusCode::SEE_OTHER
+            | StatusCode::TEMPORARY_REDIRECT
+            | StatusCode::PERMANENT_REDIRECT
+    );
+
+    if is_redirect {
+        error!(
+            "upstream redirect {} for {} {}, refused",
+            status,
+            req.method(),
+            req.path()
+        );
+        return Err(actix_web::error::ErrorBadGateway("upstream redirect"));
+    }
+
+    Ok(())
+}
