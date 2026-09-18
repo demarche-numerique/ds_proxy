@@ -46,7 +46,7 @@ pub async fn main(config: HttpConfig) -> std::io::Result<()> {
                     .finish(),
             ))
             .app_data(Data::new(config.clone()))
-            .wrap(middleware::Logger::default())
+            .wrap(access_log())
             .service(resource("/ping").guard(Get()).to(ping))
             .service({
                 let scope = scope("/upstream")
@@ -107,4 +107,31 @@ pub async fn main(config: HttpConfig) -> std::io::Result<()> {
     }
 
     server.run().await
+}
+
+// The default access log prints the request line with its query string,
+// which is where presigned URLs carry their signature. Log the same line
+// without the query: the credential must not end up in the logs.
+fn access_log() -> middleware::Logger {
+    middleware::Logger::new(r#"%a "%{REQUEST_LINE}xi" %s %b "%{Referer}i" "%{User-Agent}i" %T"#)
+        .custom_request_replace("REQUEST_LINE", request_line)
+}
+
+fn request_line(req: &actix_web::dev::ServiceRequest) -> String {
+    format!("{} {} {:?}", req.method(), req.path(), req.version())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::test::TestRequest;
+
+    #[test]
+    fn request_line_has_no_query_string() {
+        let req = TestRequest::put()
+            .uri("/upstream/bucket/key?X-Amz-Signature=secret&X-Amz-Expires=60")
+            .to_srv_request();
+
+        assert_eq!(request_line(&req), "PUT /upstream/bucket/key HTTP/1.1");
+    }
 }
