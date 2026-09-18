@@ -82,6 +82,40 @@ fn the_app_crashes_on_a_missing_password() {
     decrypt_cmd.assert().failure();
 }
 
+// A password file that is not UTF-8 stops the app, without the file's
+// bytes ending up in the error output.
+#[test]
+fn the_app_crashes_on_a_binary_password_file_without_printing_it() {
+    let temp = TempDir::new().unwrap();
+
+    let password_file = temp.child("password");
+    password_file
+        .write_binary(&[0xff, 0xfe, b's', b'e', b'c', b'r', b'e', b't'])
+        .unwrap();
+
+    let decrypted = temp.child("computer.dec.svg");
+
+    let output = Command::new(cargo::cargo_bin!("ds_proxy"))
+        .arg("decrypt")
+        .arg(ENCRYPTED_COMPUTER_SVG_PATH)
+        .arg(decrypted.path())
+        .arg("--password-file")
+        .arg(password_file.path())
+        .env("DS_KEYRING", DS_KEYRING)
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("is not valid UTF-8"), "stderr: {}", stderr);
+    assert!(
+        !stderr.contains("255, 254") && !stderr.contains("secret"),
+        "the password file leaked into stderr: {}",
+        stderr
+    );
+}
+
 #[test]
 fn the_app_crashes_with_an_invalid_password() {
     let temp = TempDir::new().unwrap();

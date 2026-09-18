@@ -106,8 +106,9 @@ pub async fn verify_s3_signature(
         if is_s3_request && !s3_config.bypass_signature_check {
             if !is_signature_valid(service_request.request(), s3_config) {
                 log::warn!(
-                    "Invalid S3 signature for request: {}",
-                    service_request.uri()
+                    "Invalid S3 signature for {} {}",
+                    service_request.method(),
+                    service_request.path()
                 );
                 return Err(ErrorUnauthorized("Invalid S3 signature"));
             }
@@ -118,9 +119,10 @@ pub async fn verify_s3_signature(
             let unsigned = unsigned_amz_headers(service_request.request());
             if !unsigned.is_empty() {
                 log::warn!(
-                    "Unsigned x-amz- headers {:?} for request: {}",
+                    "Unsigned x-amz- headers {:?} for {} {}",
                     unsigned,
-                    service_request.uri()
+                    service_request.method(),
+                    service_request.path()
                 );
                 return Err(ErrorForbidden(
                     "There were headers present in the request which were not signed",
