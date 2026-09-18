@@ -90,8 +90,12 @@ modification qui en affaiblit un doit être discutée avant d'être écrite.
 5. **Une URL présignée d'écriture ne réussit qu'une fois par objet.** Le
    verrou Redis est calculé sur le chemin résolu (segments `.` et `..`,
    encodés ou non), le même que celui couvert par la signature, pour qu'une
-   seule identité d'objet corresponde à un seul verrou. `ensure_write_once`.
-   Tests : `tests/ensure_write_once.rs`.
+   seule identité d'objet corresponde à un seul verrou. Une requête est
+   reconnue présignée sur les clés de query décodées, et le verrou dure
+   aussi longtemps que le credential reste acceptable, jamais moins d'une
+   heure. Seule une réponse 2xx de l'amont consomme le verrou.
+   `ensure_write_once`, `PresignedQuery`.
+   Tests : `tests/ensure_write_once.rs`, `presigned.rs` (unitaires).
 6. **`/local` ne sort jamais de son répertoire.** Le nom demandé est réduit
    à son dernier segment ; `..`, `/` et vide sont refusés.
    `local_encryption_path_for`. Test : `config.rs`.
