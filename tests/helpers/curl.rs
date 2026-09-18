@@ -20,6 +20,45 @@ pub fn curl_get_status(url: &str) -> String {
     std::str::from_utf8(&stdout).unwrap().to_string()
 }
 
+pub fn curl_get_status_with_headers(url: &str, headers: &[&str]) -> String {
+    let mut command = Command::new("curl");
+    command.arg("-XGET").arg(url);
+
+    for header in headers {
+        command.arg("-H").arg(header);
+    }
+
+    let stdout = command
+        .arg("-o")
+        .arg("/dev/null")
+        .arg("-s")
+        .arg("-w")
+        .arg("%{http_code}")
+        .output()
+        .expect("failed to perform download")
+        .stdout;
+
+    std::str::from_utf8(&stdout).unwrap().to_string()
+}
+
+pub fn curl_put_status(file_path: &str, url: &str) -> String {
+    let stdout = Command::new("curl")
+        .arg("-XPUT")
+        .arg(url)
+        .arg("--data-binary")
+        .arg(format!("@{}", file_path))
+        .arg("-o")
+        .arg("/dev/null")
+        .arg("-s")
+        .arg("-w")
+        .arg("%{http_code}")
+        .output()
+        .expect("failed to perform upload")
+        .stdout;
+
+    std::str::from_utf8(&stdout).unwrap().to_string()
+}
+
 pub fn curl_put(file_path: &str, url: &str) -> Output {
     let cmd = Command::new("curl")
         .arg("-XPUT")
