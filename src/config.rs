@@ -405,7 +405,11 @@ impl HttpConfig {
 fn read_file_content(path_string: &str) -> String {
     match std::fs::read(path_string) {
         Err(why) => panic!("couldn't open {}: {}", path_string, why),
-        Ok(file) => String::from_utf8(file).unwrap(),
+        // FromUtf8Error's Debug output includes the bytes it failed on, that
+        // is the whole password file: do not let unwrap print it.
+        Ok(file) => {
+            String::from_utf8(file).unwrap_or_else(|_| panic!("{} is not valid UTF-8", path_string))
+        }
     }
 }
 
