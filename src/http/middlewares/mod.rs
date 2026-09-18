@@ -1,5 +1,6 @@
 use super::super::config::HttpConfig;
 use super::utils::flavor::{detect_flavor, Flavor};
+use super::utils::presigned::PresignedQuery;
 use super::utils::verify_signature::{is_signature_valid, unsigned_amz_headers};
 use crate::write_once_service::WriteOnceService;
 use actix_web::http::{Method, Uri};
@@ -10,6 +11,7 @@ use actix_web::{
     middleware::Next,
     web, Error,
 };
+use chrono::Utc;
 use std::path::Path;
 use url::Url;
 
@@ -19,17 +21,17 @@ pub async fn ensure_write_once(
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
     let uri = req.uri();
 
-    // Only guard presigned/user-facing writes: Swift TempURL (temp_url_expires)
-    // and S3 presigned URLs (x-amz-expires). Both flavors are covered so
-    // write-once holds in dual mode too.
-    let user_facing_uri = uri.query().is_some_and(|query| {
-        let query = query.to_ascii_lowercase();
-        query.contains("temp_url_expires") || query.contains("x-amz-expires")
-    });
-
-    if !user_facing_uri {
+    // Only guard presigned/user-facing writes: Swift TempURLs and S3
+    // presigned URLs, recognised on decoded query keys. Both flavors are
+    // covered so write-once holds in dual mode too.
+    let presigned = PresignedQuery::parse(uri.query());
+    if !presigned.is_presigned() {
         return next.call(req).await;
     }
+
+    // The lock must outlive the credential, or the URL becomes replayable
+    // again once the lock expires.
+    let lock_duration = presigned.lock_duration(Utc::now());
 
     let write_once_service = req
         .app_data::<web::Data<WriteOnceService>>()
@@ -39,26 +41,35 @@ pub async fn ensure_write_once(
     let path = normalized_path(uri);
 
     // key was set before, early return and deny access because we only write once
-    match write_once_service.lock(&path).await {
-        Ok(true) => {}
+    let locked = match write_once_service.lock(&path, lock_duration).await {
+        Ok(true) => true,
         Ok(false) => {
             log::warn!("Access denied: Redis key already exists: {}", path);
             return Err(ErrorForbidden("Access denied"));
         }
-        Err(_) => {} // don't mind about redis errors
-    }
+        // Redis unavailable: the request goes through unguarded. Say so
+        // loudly, since write-once is silently suspended for as long as
+        // this lasts.
+        Err(err) => {
+            log::error!(
+                "write-once lock unavailable, letting {} through unguarded: {}",
+                path,
+                err
+            );
+            false
+        }
+    };
 
     // proceed with the request
     let result = next.call(req).await;
-    if let Ok(ref response) = result {
-        if !response.status().is_success() {
-            if let Err(err) = write_once_service.unlock(&path).await {
-                log::error!(
-                    "Failed to mark as locked with expiration: {}. Error: {}",
-                    path,
-                    err
-                );
-            }
+
+    // Only a successful upstream answer consumes the lock. Anything else
+    // (upstream refusal, proxy error) stored nothing, so the credential
+    // must stay usable.
+    let succeeded = matches!(&result, Ok(response) if response.status().is_success());
+    if locked && !succeeded {
+        if let Err(err) = write_once_service.unlock(&path).await {
+            log::error!("Failed to release write-once lock on {}: {}", path, err);
         }
     }
 

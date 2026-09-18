@@ -1,6 +1,8 @@
 use deadpool_redis::{redis::cmd, redis::AsyncCommands, Pool};
+use std::time::Duration;
 
-const LOCK_DURATION: u64 = 3600; // 1 hour
+/// Shortest time a lock is held, whatever the credential says.
+pub const DEFAULT_LOCK_DURATION: Duration = Duration::from_secs(3600);
 
 use sha2::{Digest, Sha256};
 
@@ -22,7 +24,8 @@ impl WriteOnceService {
     pub fn hash_key(path: &str) -> String {
         format!("locks:{}", hex::encode(Sha256::digest(path.as_bytes())))
     }
-    pub async fn lock(&self, path: &str) -> Result<bool, String> {
+    /// Takes the lock for `duration`, or reports that it is already held.
+    pub async fn lock(&self, path: &str, duration: Duration) -> Result<bool, String> {
         let key = Self::hash_key(path);
         let mut conn = self.get_redis_connection().await?;
 
@@ -30,7 +33,7 @@ impl WriteOnceService {
             .arg(&key)
             .arg("true")
             .arg("EX")
-            .arg(LOCK_DURATION)
+            .arg(duration.as_secs().max(1))
             .arg("NX")
             .query_async(&mut conn)
             .await

@@ -8,6 +8,9 @@ use std::time::Duration;
 use crate::http::utils::s3_helper::remove_s3_signature_params;
 use crate::s3_config::S3Config;
 
+/// Clock skew tolerated around a signature's validity window, on both ends.
+pub const SIGNATURE_GRACE: Duration = Duration::from_mins(15);
+
 pub fn is_signature_valid(request: &HttpRequest, s3_config: S3Config) -> bool {
     is_signature_valid_with_date(request, s3_config, Utc::now())
 }
@@ -76,11 +79,11 @@ fn s3_date_is_valid(
     s3_date: DateTime<Utc>,
     expires_in: Option<Duration>,
 ) -> bool {
-    if s3_date + expires_in.unwrap_or_default() < now - Duration::from_mins(15) {
+    if s3_date + expires_in.unwrap_or_default() < now - SIGNATURE_GRACE {
         return false;
     }
 
-    if s3_date > now + Duration::from_mins(15) {
+    if s3_date > now + SIGNATURE_GRACE {
         return false;
     }
 

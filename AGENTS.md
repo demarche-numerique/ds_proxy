@@ -90,8 +90,12 @@ modification qui en affaiblit un doit être discutée avant d'être écrite.
 5. **Une URL présignée d'écriture ne réussit qu'une fois par objet.** Le
    verrou Redis est calculé sur le chemin résolu (segments `.` et `..`,
    encodés ou non), le même que celui couvert par la signature, pour qu'une
-   seule identité d'objet corresponde à un seul verrou. `ensure_write_once`.
-   Tests : `tests/ensure_write_once.rs`.
+   seule identité d'objet corresponde à un seul verrou. Une requête est
+   reconnue présignée sur les clés de query décodées, et le verrou dure
+   aussi longtemps que le credential reste acceptable, jamais moins d'une
+   heure. Seule une réponse 2xx de l'amont consomme le verrou.
+   `ensure_write_once`, `PresignedQuery`.
+   Tests : `tests/ensure_write_once.rs`, `presigned.rs` (unitaires).
 6. **`/local` ne sort jamais de son répertoire.** Le nom demandé est réduit
    à son dernier segment ; `..`, `/` et vide sont refusés.
    `local_encryption_path_for`. Test : `config.rs`.
@@ -135,6 +139,13 @@ produit, pas seulement un correctif.
   et la garantie apportée, jamais la marche à suivre pour exploiter le
   défaut.
 - Un correctif de sécurité arrive avec le test qui échoue sans lui.
+- Écrire le code le plus simple qui passe les tests. Une abstraction, un
+  garde, une tâche de fond ou un cas limite ne se justifie que par un
+  comportement démontré, en lisant les sources du framework ou par un test
+  qui reproduit le cas réel, jamais par un cas supposé. Une piste issue d'un
+  rapport ou d'une revue se vérifie avant d'être codée. Une optimisation qui
+  coûte en lisibilité, comme éviter une allocation sur un chemin rare, se
+  justifie par une mesure, sinon on prend la forme lisible.
 
 ## Vérifications
 

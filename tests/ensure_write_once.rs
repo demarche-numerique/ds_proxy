@@ -23,6 +23,10 @@ pub async fn mock_found() -> HttpResponse {
     response.body("Redirecting...")
 }
 
+pub async fn mock_bad_gateway() -> Result<HttpResponse, actix_web::Error> {
+    Err(actix_web::error::ErrorBadGateway("upstream unreachable"))
+}
+
 fn launch_redis_with_delay() -> ChildGuard {
     let redis = launch_redis(PrintServerLogs::No);
     thread::sleep(std::time::Duration::from_secs(4));
@@ -81,6 +85,9 @@ mod tests {
             "/test-path?a=1&temp_url_expires=1234567890", // reordered
             "/test-path?temp_url_expires=1234567890&toto=plop1", // extra param
             "/test-path?temp_url_expires=9999999999",     // different values
+            "/test-path?temp_url%5Fexpires=1234567890",   // encoded key
+            "/test-path?temp_url_sig=abc",                // signature only
+            "/test-path?temp%5Furl%5Fsig=abc",            // encoded signature key
         ];
 
         for uri in bypass_attempts {
@@ -133,10 +140,13 @@ mod tests {
         assert_eq!(resp.status(), 200);
 
         // Subsequent presigned writes on the same path are denied, whatever the
-        // parameter casing.
+        // parameter casing or encoding.
         let bypass_attempts = [
             "/s3-path?X-Amz-Expires=60&X-Amz-Signature=abc", // identical
             "/s3-path?x-amz-expires=60&x-amz-signature=def", // lowercased
+            "/s3-path?X-Amz%2DExpires=60&X-Amz-Signature=abc", // encoded expiry key
+            "/s3-path?X-Amz%2DExpires=60&X-Amz%2DSignature=abc", // both keys encoded
+            "/s3-path?X-Amz-Signature=abc",                  // signature without expiry
         ];
 
         for uri in bypass_attempts {
@@ -147,6 +157,90 @@ mod tests {
                 Err(err) => assert_eq!(err.error_response().status(), 403),
             }
         }
+    }
+
+    // A proxy-side failure (502 from an unreachable upstream) stored nothing:
+    // the credential stays usable.
+    #[actix_web::test]
+    #[serial(servers)]
+    async fn test_ensure_write_once_unlocks_on_handler_error() {
+        let _redis_process = launch_redis_with_delay();
+        let config = RedisConfig {
+            url: Url::parse("redis://127.0.0.1:5555").unwrap(),
+            ..RedisConfig::default()
+        };
+        let redis_pool = configure_redis_pool(config).await;
+
+        let mut actix_app = App::new().service(
+            resource("/error-path")
+                .guard(Get())
+                .wrap(from_fn(ensure_write_once))
+                .to(mock_bad_gateway),
+        );
+        actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool)));
+        let app = test::init_service(actix_app).await;
+
+        for _ in 0..2 {
+            let req = test::TestRequest::get()
+                .uri("/error-path?temp_url_expires=1234567890")
+                .to_request();
+            // actix turns the handler error into a plain 502 response; the
+            // second attempt must get the same 502, not a 403 from the lock
+            let status = match test::try_call_service(&app, req).await {
+                Ok(resp) => resp.status(),
+                Err(err) => err.error_response().status(),
+            };
+            assert_eq!(status, 502);
+        }
+    }
+
+    // The lock outlives the credential: a URL presigned for seven days keeps
+    // its path locked for seven days (plus the signature grace), not one hour.
+    #[actix_web::test]
+    #[serial(servers)]
+    async fn test_ensure_write_once_lock_lasts_as_long_as_the_presigned_url() {
+        let _redis_process = launch_redis_with_delay();
+
+        let config = RedisConfig {
+            url: Url::parse("redis://127.0.0.1:5555").unwrap(),
+            ..RedisConfig::default()
+        };
+        let redis_pool = configure_redis_pool(config).await;
+
+        let mut actix_app = App::new().service(
+            resource("/week-path")
+                .guard(Get())
+                .wrap(from_fn(ensure_write_once))
+                .to(mock_success),
+        );
+
+        actix_app = actix_app.app_data(web::Data::new(WriteOnceService::new(redis_pool.clone())));
+
+        let key = WriteOnceService::hash_key("/week-path");
+        let mut conn = redis_pool
+            .get()
+            .await
+            .expect("Failed to get Redis connection");
+        let _: () = conn.del(&key).await.unwrap();
+
+        let app = test::init_service(actix_app).await;
+
+        let date = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let uri = format!(
+            "/week-path?X-Amz-Date={}&X-Amz-Expires=604800&X-Amz-Signature=abc",
+            date
+        );
+        let req = test::TestRequest::get().uri(&uri).to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+
+        let ttl: i64 = conn.ttl(&key).await.unwrap();
+        // seven days plus the 15 minute grace, minus the seconds this test took
+        assert!(
+            ttl > 604800 + 900 - 60 && ttl <= 604800 + 900,
+            "lock ttl should follow the presigned validity, got {}",
+            ttl
+        );
     }
 
     // The lock is keyed on the resolved path: dot segments, encoded or not, do
