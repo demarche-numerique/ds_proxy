@@ -3,7 +3,6 @@ use crate::http::utils::flavor::{Flavor, route};
 use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
-use actix_web::body::SizedStream;
 use futures::StreamExt;
 use md5::{Digest, Md5};
 use std::cell::RefCell;
@@ -58,9 +57,6 @@ pub async fn forward(
             forwarded_req.insert_header(("x-amz-meta-original-content-length", length.to_string()));
     }
 
-    let forward_length: Option<usize> = content_length(req.headers())
-        .map(|content_length| encrypted_content_length(content_length, DEFAULT_CHUNK_SIZE));
-
     for header in &FORWARD_REQUEST_HEADERS_TO_REMOVE {
         forwarded_req.headers_mut().remove(header);
     }
@@ -78,7 +74,13 @@ pub async fn forward(
         .map(|item| item.map_err(Error::from))
         .inspect_ok(move |bytes| hasher.borrow_mut().update(bytes));
 
-    let encrypted_stream = encode::<Error>(key, key_id, DEFAULT_CHUNK_SIZE, hashed_payload);
+    let encrypted_body = encrypted_body::<Error>(
+        key,
+        key_id,
+        DEFAULT_CHUNK_SIZE,
+        content_length(req.headers()),
+        hashed_payload,
+    );
 
     let final_req = match (flavor, config.s3_config.clone()) {
         (Flavor::S3, Some(s3_config)) => {
@@ -87,15 +89,7 @@ pub async fn forward(
         _ => forwarded_req,
     };
 
-    let res_e = if let Some(length) = forward_length {
-        final_req
-            .send_body(SizedStream::new(length as u64, encrypted_stream))
-            .await
-    } else {
-        final_req.send_stream(encrypted_stream).await
-    };
-
-    let mut res = res_e.map_err(|e| {
+    let mut res = final_req.send_body(encrypted_body).await.map_err(|e| {
         error!(
             "forward fwk error {:?} for {} {}",
             e,

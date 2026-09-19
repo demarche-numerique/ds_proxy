@@ -9,9 +9,35 @@ pub use self::encoder::encode;
 pub use self::header::Header;
 pub use self::header_decoder::read_ds_header;
 
+use actix_web::body::{BodyStream, EitherBody, MessageBody, SizedStream};
+use actix_web::web::Bytes;
 use decipher_type::DecipherType;
+use futures::stream::Stream;
 use header::*;
+use libsodium_rs::crypto_secretstream::Key;
 use libsodium_rs::crypto_secretstream::xchacha20poly1305::{ABYTES, HEADERBYTES};
+use std::error::Error as StdError;
+
+pub fn encrypted_body<E>(
+    key: Key,
+    key_id: u64,
+    chunk_size: usize,
+    clear_length: Option<usize>,
+    input: impl Stream<Item = Result<Bytes, E>> + 'static,
+) -> impl MessageBody + 'static
+where
+    E: Into<Box<dyn StdError>> + 'static,
+{
+    let encrypted = encode(key, key_id, chunk_size, input);
+
+    match clear_length {
+        Some(length) => EitherBody::left(SizedStream::new(
+            encrypted_content_length(length, chunk_size) as u64,
+            encrypted,
+        )),
+        None => EitherBody::right(BodyStream::new(encrypted)),
+    }
+}
 
 pub fn encrypted_content_length(clear_length: usize, chunk_size: usize) -> usize {
     if clear_length == 0 {
