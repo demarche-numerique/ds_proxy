@@ -34,14 +34,13 @@ fn encoding_then_decoding_returns_source_data() {
 
         let (key_id, key) = keyring.get_last_key().unwrap();
 
-        let encoder = Encoder::new(key, key_id, chunk_size, Box::new(source_stream));
+        let encoder = encode(key, key_id, chunk_size, source_stream);
 
-        let mut boxy: Box<dyn futures::Stream<Item = Result<Bytes, _>> + Unpin> = Box::new(encoder);
+        let mut boxy = Box::pin(encoder);
 
         let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
 
-        let decoder =
-        Decoder::new_from_cypher_and_buffer(keyring.clone(), boxy, cypher_type, buff);
+        let decoder = decode(keyring.clone(), boxy, cypher_type, buff);
 
         let buf = block_on(to_bytes(BodyStream::new(decoder))).unwrap();
 
@@ -58,7 +57,7 @@ fn decoding_does_not_depend_on_how_the_ciphertext_is_split() {
 
         let source: Result<Bytes, Error> = Ok(Bytes::from(source_bytes.clone()));
         let source_stream = futures::stream::once(Box::pin(async { source }));
-        let encoder = Encoder::new(key, key_id, chunk_size, Box::new(source_stream));
+        let encoder = encode(key, key_id, chunk_size, source_stream);
         let encrypted = block_on(to_bytes(BodyStream::new(encoder))).unwrap();
 
         // The encoder hands out whole chunks, upstream storage does not: split
@@ -72,7 +71,7 @@ fn decoding_does_not_depend_on_how_the_ciphertext_is_split() {
             Box::new(futures::stream::iter(pieces));
 
         let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
-        let decoder = Decoder::new_from_cypher_and_buffer(keyring.clone(), boxy, cypher_type, buff);
+        let decoder = decode(keyring.clone(), boxy, cypher_type, buff);
         let decrypted = block_on(to_bytes(BodyStream::new(decoder))).unwrap();
 
         prop_assert_eq!(&source_bytes[..], &decrypted[..]);
@@ -87,7 +86,7 @@ fn encrypting_an_empty_source_produces_nothing() {
     let source: Result<Bytes, Error> = Ok(Bytes::new());
     let source_stream = futures::stream::once(Box::pin(async { source }));
 
-    let encoder = Encoder::new(key, key_id, 16, Box::new(source_stream));
+    let encoder = encode(key, key_id, 16, source_stream);
     let encrypted = block_on(to_bytes(BodyStream::new(encoder))).unwrap();
 
     // Not even a header: an empty object stays empty, which is what
@@ -110,7 +109,7 @@ fn the_encrypted_length_matches_the_announced_one() {
             .map(|piece| Ok(Bytes::copy_from_slice(piece)))
             .collect();
 
-        let encoder = Encoder::new(key, key_id, chunk_size, Box::new(futures::stream::iter(pieces)));
+        let encoder = encode(key, key_id, chunk_size, futures::stream::iter(pieces));
         let encrypted = block_on(to_bytes(BodyStream::new(encoder))).unwrap();
 
         prop_assert_eq!(
@@ -132,8 +131,7 @@ fn decrypting_plaintext_returns_plaintext() {
 
         let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
 
-        let decoder =
-        Decoder::new_from_cypher_and_buffer(keyring.clone(), boxy, cypher_type, buff);
+        let decoder = decode(keyring.clone(), boxy, cypher_type, buff);
 
         let buf = block_on(to_bytes(BodyStream::new(decoder))).unwrap();
 

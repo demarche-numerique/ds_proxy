@@ -290,7 +290,7 @@ pub fn decrypt_bytes(input: Bytes) -> Bytes {
 
     let keyring = load_keyring(DS_KEYRING, PASSWORD.to_string());
 
-    let decoder = Decoder::new_from_cypher_and_buffer(keyring, boxy, cypher_type, buff);
+    let decoder = decode(keyring, boxy, cypher_type, buff);
 
     block_on(to_bytes(BodyStream::new(decoder))).unwrap()
 }

@@ -14,7 +14,7 @@ pub fn encrypt(config: EncryptConfig) {
         .expect("no key avalaible for encryption");
 
     let input = read_in_blocks(File::open(config.input_file).unwrap());
-    let encoder = Encoder::new(key, key_id, DEFAULT_CHUNK_SIZE, Box::new(input));
+    let encoder = Box::pin(encode(key, key_id, DEFAULT_CHUNK_SIZE, input));
 
     let mut output = File::create(config.output_file).unwrap();
     for chunk in block_on_stream(encoder) {
@@ -23,13 +23,11 @@ pub fn encrypt(config: EncryptConfig) {
 }
 
 pub fn decrypt(config: DecryptConfig) {
-    let mut boxy: Box<dyn Stream<Item = io::Result<Bytes>> + Unpin> =
-        Box::new(read_in_blocks(File::open(config.input_file).unwrap()));
+    let mut input = read_in_blocks(File::open(config.input_file).unwrap());
 
-    let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
+    let (cypher_type, buff) = block_on(read_ds_header(&mut input));
 
-    let decoder =
-        Decoder::new_from_cypher_and_buffer(config.keyring.clone(), boxy, cypher_type, buff);
+    let decoder = Box::pin(decode(config.keyring.clone(), input, cypher_type, buff));
 
     let mut output = File::create(config.output_file).unwrap();
     for chunk in block_on_stream(decoder) {

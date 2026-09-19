@@ -78,8 +78,7 @@ pub async fn forward(
         .map(|item| item.map_err(Error::from))
         .inspect_ok(move |bytes| hasher.borrow_mut().update(bytes));
 
-    let encrypted_stream =
-        Encoder::<Error>::new(key, key_id, DEFAULT_CHUNK_SIZE, Box::new(hashed_payload));
+    let encrypted_stream = encode::<Error>(key, key_id, DEFAULT_CHUNK_SIZE, hashed_payload);
 
     let final_req = match (flavor, config.s3_config.clone()) {
         (Flavor::S3, Some(s3_config)) => {

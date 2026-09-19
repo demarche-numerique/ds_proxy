@@ -7,6 +7,7 @@ use crate::http::utils::{
 use actix_files::HttpRange;
 use actix_web::http::StatusCode;
 use actix_web::web::Bytes;
+use std::pin::Pin;
 
 pub async fn fetch(
     req: HttpRequest,
@@ -74,11 +75,12 @@ pub async fn fetch(
 
     let mut boxy: Box<dyn Stream<Item = Result<Bytes, _>> + Unpin> = Box::new(res);
     let (cypher_type, buff) = read_ds_header(&mut boxy).await;
+
     let fetch_length =
         original_length.map(|content_length| decrypted_content_length(content_length, cypher_type));
 
-    let decoder =
-        Decoder::new_from_cypher_and_buffer(config.keyring.clone(), boxy, cypher_type, buff);
+    let decoder: Pin<Box<dyn Stream<Item = Result<Bytes, _>>>> =
+        Box::pin(decode(config.keyring.clone(), boxy, cypher_type, buff));
 
     if let Some(length) = fetch_length {
         let range = raw_range.map(|r| HttpRange::parse(r, length.try_into().unwrap()));
@@ -93,7 +95,7 @@ pub async fn fetch(
                 let range_start = r.start.try_into().unwrap();
                 let range_end = (r.start + r.length - 1).try_into().unwrap();
 
-                let pe = PartialExtractor::new(Box::new(decoder), range_start, range_end);
+                let pe = PartialExtractor::new(decoder, range_start, range_end);
 
                 client_resp.append_header((
                     header::CONTENT_RANGE,

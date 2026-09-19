@@ -4,8 +4,8 @@ mod encoder;
 pub mod header;
 mod header_decoder;
 
-pub use self::decoder::Decoder;
-pub use self::encoder::Encoder;
+pub use self::decoder::decode;
+pub use self::encoder::encode;
 pub use self::header::Header;
 pub use self::header_decoder::read_ds_header;
 

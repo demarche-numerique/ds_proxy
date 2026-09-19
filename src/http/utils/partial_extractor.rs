@@ -5,7 +5,7 @@ use futures::stream::Stream;
 use log::trace;
 
 pub struct PartialExtractor<E> {
-    inner: Box<dyn Stream<Item = Result<Bytes, E>> + Unpin>,
+    inner: Pin<Box<dyn Stream<Item = Result<Bytes, E>>>>,
     start: usize,
     end: usize,
     position: usize,
@@ -13,7 +13,7 @@ pub struct PartialExtractor<E> {
 
 impl<E> PartialExtractor<E> {
     pub fn new(
-        s: Box<dyn Stream<Item = Result<Bytes, E>> + Unpin>,
+        s: Pin<Box<dyn Stream<Item = Result<Bytes, E>>>>,
         start: usize,
         end: usize,
     ) -> PartialExtractor<E> {
@@ -32,7 +32,7 @@ impl<E> Stream for PartialExtractor<E> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let extractor = self.get_mut();
 
-        match Pin::new(extractor.inner.as_mut()).poll_next(cx) {
+        match extractor.inner.as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(mut bytes))) => {
                 let bytes_len = bytes.len();
 
@@ -70,9 +70,7 @@ mod tests {
     use actix_web::Error;
     use actix_web::body::{BodyStream, to_bytes};
     use futures::executor::block_on;
-    use futures::stream::{self, Iter};
-    use std::vec::IntoIter;
-    use stream::iter;
+    use futures::stream::iter;
 
     #[test]
     fn extract_with_borne() {
@@ -116,13 +114,13 @@ mod tests {
         assert_eq!(expected, result);
     }
 
-    fn make_stream(v: Vec<&[u8]>) -> Box<Iter<IntoIter<Result<Bytes, Error>>>> {
+    fn make_stream(v: Vec<&[u8]>) -> Pin<Box<dyn Stream<Item = Result<Bytes, Error>>>> {
         let t = v
             .iter()
             .map(|b| Ok(Bytes::copy_from_slice(b)))
             .collect::<Vec<Result<Bytes, Error>>>();
 
-        Box::new(iter(t))
+        Box::pin(iter(t))
     }
 
     fn extract(pe: PartialExtractor<Error>) -> Bytes {
