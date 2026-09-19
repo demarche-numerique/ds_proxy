@@ -7,7 +7,7 @@ mod header_decoder;
 pub use self::decoder::Decoder;
 pub use self::encoder::Encoder;
 pub use self::header::Header;
-pub use self::header_decoder::HeaderDecoder;
+pub use self::header_decoder::read_ds_header;
 
 use decipher_type::DecipherType;
 use header::*;

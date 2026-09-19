@@ -73,8 +73,7 @@ pub async fn fetch(
     let original_length = content_length(res.headers());
 
     let mut boxy: Box<dyn Stream<Item = Result<Bytes, _>> + Unpin> = Box::new(res);
-    let header_decoder = HeaderDecoder::new(&mut boxy);
-    let (cypher_type, buff) = header_decoder.await;
+    let (cypher_type, buff) = read_ds_header(&mut boxy).await;
     let fetch_length =
         original_length.map(|content_length| decrypted_content_length(content_length, cypher_type));
 

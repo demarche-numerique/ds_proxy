@@ -38,8 +38,7 @@ fn encoding_then_decoding_returns_source_data() {
 
         let mut boxy: Box<dyn futures::Stream<Item = Result<Bytes, _>> + Unpin> = Box::new(encoder);
 
-        let header_decoder = HeaderDecoder::new(&mut boxy);
-        let (cypher_type, buff) = block_on(header_decoder);
+        let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
 
         let decoder =
         Decoder::new_from_cypher_and_buffer(keyring.clone(), boxy, cypher_type, buff);
@@ -60,8 +59,7 @@ fn decrypting_plaintext_returns_plaintext() {
 
         let mut boxy: Box<dyn futures::Stream<Item = Result<Bytes, _>> + Unpin> = Box::new(source_stream);
 
-        let header_decoder = HeaderDecoder::new(&mut boxy);
-        let (cypher_type, buff) = block_on(header_decoder);
+        let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
 
         let decoder =
         Decoder::new_from_cypher_and_buffer(keyring.clone(), boxy, cypher_type, buff);

@@ -26,8 +26,7 @@ pub fn decrypt(config: DecryptConfig) {
     let mut boxy: Box<dyn Stream<Item = io::Result<Bytes>> + Unpin> =
         Box::new(read_in_blocks(File::open(config.input_file).unwrap()));
 
-    let header_decoder = HeaderDecoder::new(&mut boxy);
-    let (cypher_type, buff) = block_on(header_decoder);
+    let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
 
     let decoder =
         Decoder::new_from_cypher_and_buffer(config.keyring.clone(), boxy, cypher_type, buff);

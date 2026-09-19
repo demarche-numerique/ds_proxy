@@ -286,8 +286,7 @@ pub fn decrypt_bytes(input: Bytes) -> Bytes {
     let mut boxy: Box<dyn futures::Stream<Item = Result<Bytes, _>> + Unpin> =
         Box::new(source_stream);
 
-    let header_decoder = HeaderDecoder::new(&mut boxy);
-    let (cypher_type, buff) = block_on(header_decoder);
+    let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
 
     let keyring = load_keyring(DS_KEYRING, PASSWORD.to_string());
 

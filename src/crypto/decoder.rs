@@ -21,14 +21,14 @@ impl<E> Decoder<E> {
         keyring: Keyring,
         s: Box<dyn Stream<Item = Result<Bytes, E>> + Unpin>,
         decipher_type: DecipherType,
-        b: Option<BytesMut>,
+        buffer: BytesMut,
     ) -> Decoder<E> {
         Decoder {
             inner: s,
             inner_ended: false,
             decipher_type,
             stream_decoder: None,
-            buffer: b.unwrap_or_default(),
+            buffer,
             keyring,
         }
     }
