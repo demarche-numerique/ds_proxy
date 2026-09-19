@@ -96,10 +96,16 @@ pub fn add_random_key_to_keyring(keyring_file: &str, master_password: String) {
 
 fn add_key(keyring_file: &str, master_key: &Key, key: [u8; 32], secrets: &mut Secrets) {
     let new_base64_cipher = base64_cipher(master_key, key);
+    let id = next_id(secrets);
 
-    secrets
-        .cipher_keyring
-        .insert(next_id(secrets), new_base64_cipher);
+    if secrets.cipher_keyring.contains_key(&id) {
+        panic!(
+            "key id {} already exists in the keyring, refusing to overwrite it",
+            id
+        );
+    }
+
+    secrets.cipher_keyring.insert(id, new_base64_cipher);
 
     save_secrets(keyring_file, secrets)
 }
