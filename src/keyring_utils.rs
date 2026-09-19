@@ -170,11 +170,7 @@ fn next_id(secrets: &Secrets) -> String {
 }
 
 fn last_id(secrets: &Secrets) -> Option<u64> {
-    secrets
-        .cipher_keyring
-        .keys()
-        .max()
-        .map(|x| x.parse::<u64>().unwrap())
+    secrets.cipher_keyring.keys().map(|x| to_u64(x)).max()
 }
 
 fn base64_cipher(master_key: &Key, key: [u8; 32]) -> String {
@@ -228,6 +224,31 @@ mod tests {
         }
 
         (file, password)
+    }
+
+    // With ids 0..=10 in the keyring, a string comparison picks "9" as the
+    // last id, and the twelfth key lands on "10", over the existing one.
+    #[test]
+    fn adding_a_twelfth_key_does_not_overwrite_key_ten() {
+        libsodium_rs::ensure_init().unwrap();
+
+        let (file, password) = create_keyring_file(11);
+        let keyring_path = file.path().to_str().unwrap();
+
+        let before = load_keyring(keyring_path, password.clone());
+        let key_ten_before = before.get_key_by_id(&10).unwrap();
+
+        add_random_key_to_keyring(keyring_path, password.clone());
+
+        let after = load_keyring(keyring_path, password);
+        for id in 0..12u64 {
+            assert!(after.get_key_by_id(&id).is_some(), "key {} is missing", id);
+        }
+        assert_eq!(
+            after.get_key_by_id(&10).unwrap().as_bytes(),
+            key_ten_before.as_bytes()
+        );
+        assert_eq!(after.get_last_key().unwrap().0, 11);
     }
 
     #[test]
