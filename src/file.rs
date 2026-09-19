@@ -14,7 +14,7 @@ pub fn encrypt(config: EncryptConfig) {
         .expect("no key avalaible for encryption");
 
     let input = read_in_blocks(File::open(config.input_file).unwrap());
-    let encoder = Encoder::new(key, key_id, DEFAULT_CHUNK_SIZE, Box::new(input), None);
+    let encoder = Encoder::new(key, key_id, DEFAULT_CHUNK_SIZE, Box::new(input));
 
     let mut output = File::create(config.output_file).unwrap();
     for chunk in block_on_stream(encoder) {

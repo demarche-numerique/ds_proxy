@@ -5,9 +5,6 @@ use core::task::{Context, Poll};
 use futures::stream::Stream;
 use libsodium_rs::crypto_secretstream::{Key, PushState, xchacha20poly1305::TAG_MESSAGE};
 use log::trace;
-use md5::digest::DynDigest;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 pub struct Encoder<E> {
     inner: Box<dyn Stream<Item = Result<Bytes, E>> + Unpin>,
@@ -17,7 +14,6 @@ pub struct Encoder<E> {
     chunk_size: usize,
     key: Key,
     key_id: u64,
-    maybe_hasher: Option<Rc<RefCell<Box<dyn DynDigest>>>>,
 }
 
 impl<E> Encoder<E> {
@@ -26,7 +22,6 @@ impl<E> Encoder<E> {
         key_id: u64,
         chunk_size: usize,
         s: Box<dyn Stream<Item = Result<Bytes, E>> + Unpin>,
-        maybe_hasher: Option<Rc<RefCell<Box<dyn DynDigest>>>>,
     ) -> Encoder<E> {
         Encoder {
             inner: s,
@@ -36,7 +31,6 @@ impl<E> Encoder<E> {
             chunk_size,
             key,
             key_id,
-            maybe_hasher,
         }
     }
 
@@ -117,9 +111,6 @@ impl<E> Stream for Encoder<E> {
             }
             Poll::Ready(Some(Ok(bytes))) => {
                 trace!("poll: bytes");
-                if let Some(ref hasher_rc) = encoder.maybe_hasher {
-                    hasher_rc.borrow_mut().update(&bytes);
-                }
                 encoder.buffer.extend_from_slice(&bytes);
                 encoder.encrypt_buffer(cx)
             }

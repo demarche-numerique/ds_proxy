@@ -5,7 +5,7 @@ use crate::http::utils::s3_helper::sign_request;
 use super::*;
 use actix_web::body::SizedStream;
 use futures::StreamExt;
-use md5::{Digest, Md5, digest::DynDigest};
+use md5::{Digest, Md5};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -70,16 +70,16 @@ pub async fn forward(
         .get_last_key()
         .expect("no key avalaible for encryption");
 
-    let convert_payload = payload.map(|item| item.map_err(Error::from));
-    let md5_hasher: Rc<RefCell<Box<dyn DynDigest>>> = Rc::new(RefCell::new(Box::new(Md5::new())));
-    let hasher_clone = Rc::clone(&md5_hasher);
-    let encrypted_stream = Encoder::<Error>::new(
-        key,
-        key_id,
-        DEFAULT_CHUNK_SIZE,
-        Box::new(convert_payload),
-        Some(hasher_clone),
-    );
+    // The etag we answer is the md5 of the cleartext the client sent, so the
+    // payload is hashed on its way into the encoder, not inside it.
+    let md5_hasher = Rc::new(RefCell::new(Md5::new()));
+    let hasher = Rc::clone(&md5_hasher);
+    let hashed_payload = payload
+        .map(|item| item.map_err(Error::from))
+        .inspect_ok(move |bytes| hasher.borrow_mut().update(bytes));
+
+    let encrypted_stream =
+        Encoder::<Error>::new(key, key_id, DEFAULT_CHUNK_SIZE, Box::new(hashed_payload));
 
     let final_req = match (flavor, config.s3_config.clone()) {
         (Flavor::S3, Some(s3_config)) => {
@@ -129,11 +129,7 @@ pub async fn forward(
         client_resp.append_header(header);
     }
 
-    let etag = {
-        let hasher_guard = md5_hasher.borrow();
-        let hash_result = hasher_guard.clone().finalize();
-        hex::encode(&hash_result[..])
-    };
+    let etag = hex::encode(md5_hasher.borrow().clone().finalize());
 
     client_resp.insert_header(("etag", format!("\"{}\"", etag)));
 

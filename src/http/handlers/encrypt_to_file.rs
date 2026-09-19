@@ -16,7 +16,7 @@ pub async fn encrypt_to_file(
         .get_last_key()
         .expect("no key avalaible for encryption");
 
-    let mut encrypted_stream = Encoder::new(key, id, DEFAULT_CHUNK_SIZE, Box::new(payload), None);
+    let mut encrypted_stream = Encoder::new(key, id, DEFAULT_CHUNK_SIZE, Box::new(payload));
 
     log::info!("Encrypting to file: {}", filepath.display());
 
