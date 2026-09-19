@@ -20,10 +20,15 @@ pub async fn simple_proxy(
         proxied_req.headers_mut().remove(header);
     }
 
+    // A CORS preflight carries no credential by design, and the upstream
+    // evaluates it against the bucket's CORS policy without one. Relay it as
+    // it came: signing it would lend the proxy's credentials to a request
+    // nobody authenticated (the signature check skips OPTIONS).
     let req_to_send = match (flavor, config.s3_config.clone()) {
-        (Flavor::S3, Some(s3_config)) => {
+        (Flavor::S3, Some(s3_config)) if req.method() != Method::OPTIONS => {
             config.apply_s3_connect_url(sign_request(proxied_req, s3_config))
         }
+        (Flavor::S3, Some(_)) => config.apply_s3_connect_url(proxied_req),
         _ => proxied_req,
     };
 

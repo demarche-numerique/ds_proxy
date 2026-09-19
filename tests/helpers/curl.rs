@@ -41,6 +41,27 @@ pub fn curl_get_status_with_headers(url: &str, headers: &[&str]) -> String {
     std::str::from_utf8(&stdout).unwrap().to_string()
 }
 
+// A CORS preflight as a browser sends it: OPTIONS, an Origin, no credential.
+pub fn curl_preflight_status(url: &str) -> String {
+    let stdout = Command::new("curl")
+        .arg("-XOPTIONS")
+        .arg(url)
+        .arg("-H")
+        .arg("Origin: https://app.example")
+        .arg("-H")
+        .arg("Access-Control-Request-Method: PUT")
+        .arg("-o")
+        .arg("/dev/null")
+        .arg("-s")
+        .arg("-w")
+        .arg("%{http_code}")
+        .output()
+        .expect("failed to perform preflight")
+        .stdout;
+
+    std::str::from_utf8(&stdout).unwrap().to_string()
+}
+
 pub fn curl_put_status(file_path: &str, url: &str) -> String {
     let stdout = Command::new("curl")
         .arg("-XPUT")

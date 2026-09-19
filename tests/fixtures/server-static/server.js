@@ -13,6 +13,19 @@ let portArg = process.argv.slice(2).find(arg => arg.startsWith('--port='));
 let port = portArg ? parseInt(portArg.split('=')[1], 10) : 3333;
 
 let last_put_headers = {};
+let last_options_headers = {};
+
+// A CORS preflight: record what the proxy forwarded, answer like a bucket
+// whose CORS policy allows everything.
+app.options('*', function(req, res) {
+  last_options_headers = req.headers;
+
+  res.writeHead(204, {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, PUT, HEAD',
+  });
+  res.end();
+});
 
 // Any request under a `redirect/` segment is answered with a 307 to a real
 // object path, the way S3 answers a TemporaryRedirect. The proxy must not
@@ -77,6 +90,10 @@ if (latencyArg) {
 
 app.get('/last_put_headers', function(req, res){
   res.json(last_put_headers);
+});
+
+app.get('/last_options_headers', function(req, res){
+  res.json(last_options_headers);
 });
 
 app.get('/get/500', function(req, res){
