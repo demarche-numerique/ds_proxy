@@ -6,8 +6,9 @@ use libsodium_rs::crypto_secretstream::xchacha20poly1305::{KEYBYTES, Key};
 use std::collections::HashMap;
 
 use actix_web::Error;
-use actix_web::web::{BufMut, Bytes, BytesMut};
-use futures::executor::{block_on, block_on_stream};
+use actix_web::body::{BodyStream, to_bytes};
+use actix_web::web::Bytes;
+use futures::executor::block_on;
 
 use proptest::prelude::*;
 
@@ -43,9 +44,7 @@ fn encoding_then_decoding_returns_source_data() {
         let decoder =
         Decoder::new_from_cypher_and_buffer(keyring.clone(), boxy, cypher_type, buff);
 
-        let buf = block_on_stream(decoder)
-            .map(|r| r.unwrap())
-            .fold(BytesMut::with_capacity(64), |mut acc, x| { acc.put(x); acc });
+        let buf = block_on(to_bytes(BodyStream::new(decoder))).unwrap();
 
         assert_eq!(source_bytes, &buf[..]);
     });
@@ -67,9 +66,7 @@ fn decrypting_plaintext_returns_plaintext() {
         let decoder =
         Decoder::new_from_cypher_and_buffer(keyring.clone(), boxy, cypher_type, buff);
 
-        let buf = block_on_stream(decoder)
-            .map(|r| r.unwrap())
-            .fold(BytesMut::with_capacity(64), |mut acc, x| { acc.put(x); acc });
+        let buf = block_on(to_bytes(BodyStream::new(decoder))).unwrap();
 
         assert_eq!(clear, &buf[..]);
     });

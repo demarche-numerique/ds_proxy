@@ -2,9 +2,10 @@ use assert_cmd::cargo;
 pub use serial_test::serial;
 
 use actix_web::Error;
-use actix_web::web::{BufMut, Bytes, BytesMut};
+use actix_web::body::{BodyStream, to_bytes};
+use actix_web::web::Bytes;
 use assert_cmd::prelude::*;
-use futures::executor::{block_on, block_on_stream};
+use futures::executor::block_on;
 use std::path::Path;
 use std::process::{Child, Command};
 use std::time::Duration;
@@ -279,7 +280,7 @@ pub fn decrypt(
         .success()
 }
 
-pub fn decrypt_bytes(input: Bytes) -> BytesMut {
+pub fn decrypt_bytes(input: Bytes) -> Bytes {
     let source: Result<Bytes, Error> = Ok(input);
     let source_stream = futures::stream::once(Box::pin(async { source }));
     let mut boxy: Box<dyn futures::Stream<Item = Result<Bytes, _>> + Unpin> =
@@ -292,12 +293,7 @@ pub fn decrypt_bytes(input: Bytes) -> BytesMut {
 
     let decoder = Decoder::new_from_cypher_and_buffer(keyring, boxy, cypher_type, buff);
 
-    block_on_stream(decoder)
-        .map(|r| r.unwrap())
-        .fold(BytesMut::with_capacity(64), |mut acc, x| {
-            acc.put(x);
-            acc
-        })
+    block_on(to_bytes(BodyStream::new(decoder))).unwrap()
 }
 
 pub fn ensure_is_absent(file_path: &str) {

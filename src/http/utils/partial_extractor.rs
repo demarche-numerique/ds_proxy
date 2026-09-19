@@ -67,11 +67,9 @@ impl<E> Stream for PartialExtractor<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix_web::{
-        Error,
-        web::{BufMut, BytesMut},
-    };
-    use futures::executor::block_on_stream;
+    use actix_web::Error;
+    use actix_web::body::{BodyStream, to_bytes};
+    use futures::executor::block_on;
     use futures::stream::{self, Iter};
     use std::vec::IntoIter;
     use stream::iter;
@@ -127,12 +125,7 @@ mod tests {
         Box::new(iter(t))
     }
 
-    fn extract(pe: PartialExtractor<Error>) -> BytesMut {
-        block_on_stream(pe)
-            .map(|r| r.unwrap())
-            .fold(BytesMut::with_capacity(64), |mut acc, x| {
-                acc.put(x);
-                acc
-            })
+    fn extract(pe: PartialExtractor<Error>) -> Bytes {
+        block_on(to_bytes(BodyStream::new(pe))).unwrap()
     }
 }
