@@ -112,12 +112,18 @@ fn extract_query_and_header_params(request: &HttpRequest) -> HashMap<String, Str
         .map(|(k, v)| (k.to_lowercase(), v.to_string()))
         .collect();
 
-    request.headers().iter().for_each(|(k, v)| {
-        params.insert(
-            k.as_str().to_lowercase(),
-            v.to_str().unwrap_or("").to_string(),
-        );
-    });
+    // A header sent several times enters the canonical request as its values
+    // joined by a comma, the way S3 (and aws-sigv4) canonicalise it. Keeping
+    // only one occurrence would let a client sign one value and have the
+    // proxy forward another: awc keeps the first, the map kept the last.
+    for name in request.headers().keys() {
+        let values: Vec<&str> = request
+            .headers()
+            .get_all(name)
+            .map(|v| v.to_str().unwrap_or(""))
+            .collect();
+        params.insert(name.as_str().to_lowercase(), values.join(","));
+    }
 
     params
 }
@@ -370,6 +376,37 @@ mod tests {
             unsigned_amz_headers(&request),
             vec!["x-amz-tagging".to_string()]
         );
+    }
+
+    // Same request as multiple_signed_headers, with the signed
+    // x-amz-checksum-mode header sent twice. The signature covered one
+    // value; the canonical request now carries both, so it no longer
+    // matches, whichever occurrence carries the signed value.
+    #[test]
+    fn a_signed_header_sent_twice_invalidates_the_signature() {
+        let uri =
+            "/upstream/drive-media-storage/item/969fd250-d647-48d7-a0b9-705f2cf4069c/test.txt";
+        let now = to_utc_datetime("20251118T135750Z");
+
+        for (first, second) in [("ENABLED", "DISABLED"), ("DISABLED", "ENABLED")] {
+            let request = TestRequest::get()
+                .uri(uri)
+                .insert_header(("authorization", "AWS4-HMAC-SHA256 Credential=an_access_key/20251118/eu-west-1/s3/aws4_request, SignedHeaders=host;range;x-amz-checksum-mode;x-amz-content-sha256;x-amz-date, Signature=df8a2df04aea3cec93826f42a38e55a13f74b63680fada05d5203cb05df9fbef"))
+                .insert_header(("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+                .append_header(("x-amz-checksum-mode", first))
+                .append_header(("x-amz-checksum-mode", second))
+                .insert_header(("range", "bytes=0-2047"))
+                .insert_header(("x-amz-date", "20251118T135750Z"))
+                .insert_header(("host", "c0f16bdf2fc8.ngrok-free.app"))
+                .to_http_request();
+
+            assert!(
+                !is_signature_valid_with_date(&request, config(), now),
+                "duplicated header ({}, {}) must not validate",
+                first,
+                second
+            );
+        }
     }
 
     #[test]
