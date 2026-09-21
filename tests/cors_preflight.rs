@@ -32,4 +32,13 @@ fn a_preflight_is_relayed_unsigned() {
             headers
         );
     }
+
+    // The upstream must see its own name, not the public one the browser
+    // used: a bucket resolved by virtual host would otherwise not be found.
+    assert_eq!(
+        headers.get("host").and_then(|h| h.as_str()),
+        Some("localhost:3333"),
+        "the preflight must carry the upstream Host, got: {:?}",
+        headers
+    );
 }

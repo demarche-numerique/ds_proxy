@@ -1,3 +1,4 @@
+use actix_web::http::Uri;
 use awc::ClientRequest;
 use aws_sigv4::http_request::{SignableBody, SignableRequest};
 use std::time::SystemTime;
@@ -42,13 +43,7 @@ fn sign_request_with_time(
         req.headers_mut().remove(*key);
     }
 
-    let uri = req.get_uri();
-    let mut host = uri.host().unwrap_or_default().to_string();
-    let port = uri.port();
-
-    if let Some(port) = port {
-        host = format!("{}:{}", host, port.as_str());
-    }
+    let host = upstream_host(req.get_uri());
 
     req = req
         .insert_header(("x-amz-content-sha256", "UNSIGNED-PAYLOAD"))
@@ -79,6 +74,15 @@ fn sign_request_with_time(
     log::debug!("Signed request {:?}", req);
 
     req
+}
+
+pub fn upstream_host(uri: &Uri) -> String {
+    let host = uri.host().unwrap_or_default();
+
+    match uri.port() {
+        Some(port) => format!("{}:{}", host, port.as_str()),
+        None => host.to_string(),
+    }
 }
 
 pub fn remove_s3_signature_params(url: Url) -> String {

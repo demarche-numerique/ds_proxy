@@ -1,7 +1,7 @@
 use actix_web::http::Method;
 
 use crate::http::utils::flavor::{route, Flavor};
-use crate::http::utils::s3_helper::sign_request;
+use crate::http::utils::s3_helper::{sign_request, upstream_host};
 
 use super::*;
 
@@ -21,14 +21,18 @@ pub async fn simple_proxy(
     }
 
     // A CORS preflight carries no credential by design, and the upstream
-    // evaluates it against the bucket's CORS policy without one. Relay it as
-    // it came: signing it would lend the proxy's credentials to a request
-    // nobody authenticated (the signature check skips OPTIONS).
+    // evaluates it against the bucket's CORS policy without one. Relay it
+    // unsigned: signing it would lend the proxy's credentials to a request
+    // nobody authenticated (the signature check skips OPTIONS). It still
+    // needs the upstream's Host, which sign_request would otherwise have set.
     let req_to_send = match (flavor, config.s3_config.clone()) {
         (Flavor::S3, Some(s3_config)) if req.method() != Method::OPTIONS => {
             config.apply_s3_connect_url(sign_request(proxied_req, s3_config))
         }
-        (Flavor::S3, Some(_)) => config.apply_s3_connect_url(proxied_req),
+        (Flavor::S3, Some(_)) => {
+            let host = upstream_host(proxied_req.get_uri());
+            config.apply_s3_connect_url(proxied_req.insert_header(("host", host)))
+        }
         _ => proxied_req,
     };
 
