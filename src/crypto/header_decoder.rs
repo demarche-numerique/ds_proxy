@@ -47,9 +47,7 @@ impl<E> HeaderDecoder<'_, E> {
             let _ = self.buffer.split_to(header::HEADER_SIZE);
             trace!(
                 "header version: {:?}, chunk_size: {:?}, key_id: {:?}",
-                version,
-                chunk_size,
-                0
+                version, chunk_size, 0
             );
             return ParseHeaderResponse::DecipherType(DecipherType::Encrypted {
                 chunk_size,
@@ -68,9 +66,7 @@ impl<E> HeaderDecoder<'_, E> {
 
         trace!(
             "header version: {:?}, chunk_size: {:?}, key_id: {:?}",
-            version,
-            chunk_size,
-            key_id
+            version, chunk_size, key_id
         );
 
         let _ = self.buffer.split_to(header::HEADER_V2_SIZE);

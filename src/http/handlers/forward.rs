@@ -1,11 +1,11 @@
 use crate::config::DEFAULT_CHUNK_SIZE;
-use crate::http::utils::flavor::{route, Flavor};
+use crate::http::utils::flavor::{Flavor, route};
 use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
 use actix_web::body::SizedStream;
 use futures::StreamExt;
-use md5::{digest::DynDigest, Digest, Md5};
+use md5::{Digest, Md5, digest::DynDigest};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;

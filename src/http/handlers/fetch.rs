@@ -1,6 +1,6 @@
 use super::*;
 use crate::http::utils::{
-    flavor::{route, Flavor},
+    flavor::{Flavor, route},
     partial_extractor::*,
     s3_helper::sign_request,
 };

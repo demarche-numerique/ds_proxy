@@ -38,9 +38,7 @@ impl<E> Stream for PartialExtractor<E> {
 
                 trace!(
                     "start {:?}, end {:?}, position {:?}",
-                    extractor.start,
-                    extractor.end,
-                    extractor.position
+                    extractor.start, extractor.end, extractor.position
                 );
 
                 if extractor.position + bytes_len < extractor.start {
@@ -70,8 +68,8 @@ impl<E> Stream for PartialExtractor<E> {
 mod tests {
     use super::*;
     use actix_web::{
-        web::{BufMut, BytesMut},
         Error,
+        web::{BufMut, BytesMut},
     };
     use futures::executor::block_on_stream;
     use futures::stream::{self, Iter};

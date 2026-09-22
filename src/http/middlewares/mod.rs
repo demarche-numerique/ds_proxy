@@ -1,15 +1,16 @@
 use super::super::config::HttpConfig;
-use super::utils::flavor::{detect_flavor, Flavor};
+use super::utils::flavor::{Flavor, detect_flavor};
 use super::utils::presigned::PresignedQuery;
 use super::utils::verify_signature::{is_signature_valid, unsigned_amz_headers};
 use crate::write_once_service::WriteOnceService;
 use actix_web::http::{Method, Uri};
 use actix_web::{
+    Error,
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
     error::{ErrorForbidden, ErrorUnauthorized},
     middleware::Next,
-    web, Error,
+    web,
 };
 use chrono::Utc;
 use std::path::Path;

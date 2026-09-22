@@ -1,4 +1,4 @@
-use deadpool_redis::{redis::cmd, redis::AsyncCommands, Pool};
+use deadpool_redis::{Pool, redis::AsyncCommands, redis::cmd};
 use std::time::Duration;
 
 /// Shortest time a lock is held, whatever the credential says.

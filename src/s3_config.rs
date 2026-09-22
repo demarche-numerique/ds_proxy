@@ -2,8 +2,8 @@ use std::time::{Duration, SystemTime};
 
 use aws_credential_types::Credentials;
 use aws_sigv4::http_request::{
-    sign, PercentEncodingMode, SignableRequest, SignatureLocation, SigningInstructions,
-    SigningSettings,
+    PercentEncodingMode, SignableRequest, SignatureLocation, SigningInstructions, SigningSettings,
+    sign,
 };
 use aws_sigv4::sign::v4::SigningParams;
 use url::Url;

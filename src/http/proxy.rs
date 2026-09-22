@@ -6,10 +6,9 @@ use crate::write_once_service::WriteOnceService;
 use actix_web::dev::Service;
 use actix_web::guard::{Get, Put};
 use actix_web::{
-    middleware,
+    App, HttpServer, middleware,
     middleware::from_fn,
-    web::{resource, scope, Data},
-    App, HttpServer,
+    web::{Data, resource, scope},
 };
 use futures::FutureExt;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};

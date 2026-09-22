@@ -174,7 +174,10 @@ mod tests {
             signed.headers().get("x-amz-content-sha256").unwrap(),
             "UNSIGNED-PAYLOAD"
         );
-        assert_eq!(signed.headers().get("authorization").unwrap(), "AWS4-HMAC-SHA256 Credential=an_access_key/20251201/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=7d6f290a9a6c9f298c13978e0521168756fe07e105de79238f24e40879e704f0");
+        assert_eq!(
+            signed.headers().get("authorization").unwrap(),
+            "AWS4-HMAC-SHA256 Credential=an_access_key/20251201/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=7d6f290a9a6c9f298c13978e0521168756fe07e105de79238f24e40879e704f0"
+        );
     }
 
     // Same request as test_sign_request plus a trace header: it must not enter
@@ -194,7 +197,10 @@ mod tests {
 
         let signed = sign_request_with_time(request, config(), time_now);
 
-        assert_eq!(signed.headers().get("authorization").unwrap(), "AWS4-HMAC-SHA256 Credential=an_access_key/20251201/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=7d6f290a9a6c9f298c13978e0521168756fe07e105de79238f24e40879e704f0");
+        assert_eq!(
+            signed.headers().get("authorization").unwrap(),
+            "AWS4-HMAC-SHA256 Credential=an_access_key/20251201/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=7d6f290a9a6c9f298c13978e0521168756fe07e105de79238f24e40879e704f0"
+        );
     }
 
     #[test]
@@ -214,6 +220,9 @@ mod tests {
 
         let signed = sign_request_with_time(request, config(), time_now);
 
-        assert_eq!(signed.headers().get("authorization").unwrap(), "AWS4-HMAC-SHA256 Credential=an_access_key/20251201/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=9d0c8b45db94e946687e2ff747c9e352e1468140a5bd6de9ee772f94317c7ec2");
+        assert_eq!(
+            signed.headers().get("authorization").unwrap(),
+            "AWS4-HMAC-SHA256 Credential=an_access_key/20251201/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=9d0c8b45db94e946687e2ff747c9e352e1468140a5bd6de9ee772f94317c7ec2"
+        );
     }
 }

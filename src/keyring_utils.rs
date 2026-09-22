@@ -1,8 +1,8 @@
 use super::keyring::Keyring;
-use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use libsodium_rs::crypto_pwhash::scryptsalsa208sha256::{
-    pwhash, MEMLIMIT_INTERACTIVE, OPSLIMIT_INTERACTIVE, SALTBYTES,
+    MEMLIMIT_INTERACTIVE, OPSLIMIT_INTERACTIVE, SALTBYTES, pwhash,
 };
 use libsodium_rs::crypto_secretbox::{self, Key, Nonce};
 use libsodium_rs::crypto_secretstream::{self, xchacha20poly1305::KEYBYTES};
