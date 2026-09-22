@@ -6,7 +6,6 @@ use core::task::{Context, Poll};
 use futures::stream::Stream;
 use libsodium_rs::crypto_secretstream::{Key, PullState, xchacha20poly1305};
 use log::{error, trace};
-use std::convert::TryInto;
 
 pub struct Decoder<E> {
     inner: Box<dyn Stream<Item = Result<Bytes, E>> + Unpin>,

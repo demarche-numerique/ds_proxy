@@ -10,7 +10,6 @@ use libsodium_rs::random;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use std::collections::HashMap;
-use std::convert::TryInto;
 
 pub fn load_keyring(keyring_file: &str, master_password: String) -> Keyring {
     let secrets = load_secrets(keyring_file);

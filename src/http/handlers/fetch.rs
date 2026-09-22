@@ -82,8 +82,6 @@ pub async fn fetch(
         Decoder::new_from_cypher_and_buffer(config.keyring.clone(), boxy, cypher_type, buff);
 
     if let Some(length) = fetch_length {
-        use std::convert::TryInto;
-
         let range = raw_range.map(|r| HttpRange::parse(r, length.try_into().unwrap()));
 
         let served_range = match (upstream_status, range) {

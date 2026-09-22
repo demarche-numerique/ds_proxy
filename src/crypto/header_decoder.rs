@@ -6,7 +6,6 @@ use core::task::{Context, Poll};
 use futures::future::Future;
 use futures::stream::Stream;
 use log::{error, trace};
-use std::convert::TryInto;
 use std::fmt::Debug;
 
 pub struct HeaderDecoder<'a, E> {
