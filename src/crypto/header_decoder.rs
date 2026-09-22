@@ -163,7 +163,7 @@ mod tests {
         let clear: &[u8] = b"something not encrypted";
 
         let source: Result<Bytes, Error> = Ok(Bytes::from(clear));
-        let mut source_stream = futures::stream::once(Box::pin(async { source }));
+        let mut source_stream = futures::stream::iter([source]);
 
         let (cypher_type, buff) = futures::executor::block_on(read_ds_header(&mut source_stream));
 

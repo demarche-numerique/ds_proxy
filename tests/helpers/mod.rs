@@ -282,15 +282,13 @@ pub fn decrypt(
 
 pub fn decrypt_bytes(input: Bytes) -> Bytes {
     let source: Result<Bytes, Error> = Ok(input);
-    let source_stream = futures::stream::once(Box::pin(async { source }));
-    let mut boxy: Box<dyn futures::Stream<Item = Result<Bytes, _>> + Unpin> =
-        Box::new(source_stream);
+    let mut source_stream = futures::stream::iter([source]);
 
-    let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
+    let (cypher_type, buff) = block_on(read_ds_header(&mut source_stream));
 
     let keyring = load_keyring(DS_KEYRING, PASSWORD.to_string());
 
-    let decoder = decode(keyring, boxy, cypher_type, buff);
+    let decoder = decode(keyring, source_stream, cypher_type, buff);
 
     block_on(to_bytes(BodyStream::new(decoder))).unwrap()
 }

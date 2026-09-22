@@ -9,6 +9,7 @@ use actix_web::Error;
 use actix_web::body::{BodyStream, to_bytes};
 use actix_web::web::Bytes;
 use futures::executor::block_on;
+use std::pin::pin;
 
 use proptest::prelude::*;
 
@@ -30,17 +31,15 @@ fn encoding_then_decoding_returns_source_data() {
 
     proptest!(|(source_bytes: Vec<u8>, chunk_size in 1usize..10000)| {
         let source : Result<Bytes, Error> = Ok(Bytes::from(source_bytes.clone()));
-        let source_stream  = futures::stream::once(Box::pin(async { source }));
+        let source_stream = futures::stream::iter([source]);
 
         let (key_id, key) = keyring.get_last_key().unwrap();
 
-        let encoder = encode(key, key_id, chunk_size, source_stream);
+        let mut encrypted = pin!(encode(key, key_id, chunk_size, source_stream));
 
-        let mut boxy = Box::pin(encoder);
+        let (cypher_type, buff) = block_on(read_ds_header(&mut encrypted));
 
-        let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
-
-        let decoder = decode(keyring.clone(), boxy, cypher_type, buff);
+        let decoder = decode(keyring.clone(), encrypted, cypher_type, buff);
 
         let buf = block_on(to_bytes(BodyStream::new(decoder))).unwrap();
 
@@ -56,7 +55,7 @@ fn decoding_does_not_depend_on_how_the_ciphertext_is_split() {
         let (key_id, key) = keyring.get_last_key().unwrap();
 
         let source: Result<Bytes, Error> = Ok(Bytes::from(source_bytes.clone()));
-        let source_stream = futures::stream::once(Box::pin(async { source }));
+        let source_stream = futures::stream::iter([source]);
         let encoder = encode(key, key_id, chunk_size, source_stream);
         let encrypted = block_on(to_bytes(BodyStream::new(encoder))).unwrap();
 
@@ -67,11 +66,10 @@ fn decoding_does_not_depend_on_how_the_ciphertext_is_split() {
             .map(|piece| Ok(Bytes::copy_from_slice(piece)))
             .collect();
 
-        let mut boxy: Box<dyn futures::Stream<Item = Result<Bytes, _>> + Unpin> =
-            Box::new(futures::stream::iter(pieces));
+        let mut encrypted = futures::stream::iter(pieces);
 
-        let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
-        let decoder = decode(keyring.clone(), boxy, cypher_type, buff);
+        let (cypher_type, buff) = block_on(read_ds_header(&mut encrypted));
+        let decoder = decode(keyring.clone(), encrypted, cypher_type, buff);
         let decrypted = block_on(to_bytes(BodyStream::new(decoder))).unwrap();
 
         prop_assert_eq!(&source_bytes[..], &decrypted[..]);
@@ -84,7 +82,7 @@ fn encrypting_an_empty_source_produces_nothing() {
     let (key_id, key) = keyring.get_last_key().unwrap();
 
     let source: Result<Bytes, Error> = Ok(Bytes::new());
-    let source_stream = futures::stream::once(Box::pin(async { source }));
+    let source_stream = futures::stream::iter([source]);
 
     let encoder = encode(key, key_id, 16, source_stream);
     let encrypted = block_on(to_bytes(BodyStream::new(encoder))).unwrap();
@@ -125,13 +123,11 @@ fn decrypting_plaintext_returns_plaintext() {
 
     proptest!(|(clear: Vec<u8>)| {
         let source : Result<Bytes, Error> = Ok(Bytes::from(clear.clone()));
-        let source_stream  = futures::stream::once(Box::pin(async { source }));
+        let mut source_stream = futures::stream::iter([source]);
 
-        let mut boxy: Box<dyn futures::Stream<Item = Result<Bytes, _>> + Unpin> = Box::new(source_stream);
+        let (cypher_type, buff) = block_on(read_ds_header(&mut source_stream));
 
-        let (cypher_type, buff) = block_on(read_ds_header(&mut boxy));
-
-        let decoder = decode(keyring.clone(), boxy, cypher_type, buff);
+        let decoder = decode(keyring.clone(), source_stream, cypher_type, buff);
 
         let buf = block_on(to_bytes(BodyStream::new(decoder))).unwrap();
 

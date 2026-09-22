@@ -38,7 +38,7 @@ pub async fn fetch(
         _ => fetch_req,
     };
 
-    let res = req_to_send.send_body(body).await.map_err(|e| {
+    let mut res = req_to_send.send_body(body).await.map_err(|e| {
         error!("fetch error {:?} for {} {}", e, req.method(), req.path());
         match e {
             awc::error::SendRequestError::Timeout => actix_web::error::ErrorGatewayTimeout(e),
@@ -73,14 +73,13 @@ pub async fn fetch(
 
     let original_length = content_length(res.headers());
 
-    let mut boxy: Box<dyn Stream<Item = Result<Bytes, _>> + Unpin> = Box::new(res);
-    let (cypher_type, buff) = read_ds_header(&mut boxy).await;
+    let (cypher_type, buff) = read_ds_header(&mut res).await;
 
     let fetch_length =
         original_length.map(|content_length| decrypted_content_length(content_length, cypher_type));
 
     let decoder: Pin<Box<dyn Stream<Item = Result<Bytes, _>>>> =
-        Box::pin(decode(config.keyring.clone(), boxy, cypher_type, buff));
+        Box::pin(decode(config.keyring.clone(), res, cypher_type, buff));
 
     if let Some(length) = fetch_length {
         let range = raw_range.map(|r| HttpRange::parse(r, length.try_into().unwrap()));
