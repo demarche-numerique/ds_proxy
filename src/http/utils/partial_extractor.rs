@@ -1,65 +1,35 @@
 use actix_web::web::{Buf, Bytes};
-use core::pin::Pin;
-use core::task::{Context, Poll};
+use async_stream::try_stream;
+use futures::TryStreamExt;
 use futures::stream::Stream;
 use log::trace;
+use std::pin::pin;
 
-pub struct PartialExtractor<E> {
-    inner: Pin<Box<dyn Stream<Item = Result<Bytes, E>>>>,
+pub fn extract_range<E>(
+    input: impl Stream<Item = Result<Bytes, E>>,
     start: usize,
     end: usize,
-    position: usize,
-}
+) -> impl Stream<Item = Result<Bytes, E>> {
+    try_stream! {
+        let mut input = pin!(input);
+        let mut position = 0;
 
-impl<E> PartialExtractor<E> {
-    pub fn new(
-        s: Pin<Box<dyn Stream<Item = Result<Bytes, E>>>>,
-        start: usize,
-        end: usize,
-    ) -> PartialExtractor<E> {
-        PartialExtractor {
-            inner: s,
-            start,
-            end,
-            position: 0,
-        }
-    }
-}
+        while let Some(mut bytes) = input.try_next().await? {
+            trace!("start {:?}, end {:?}, position {:?}", start, end, position);
 
-impl<E> Stream for PartialExtractor<E> {
-    type Item = Result<Bytes, E>;
+            let next_position = position + bytes.len();
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let extractor = self.get_mut();
-
-        match extractor.inner.as_mut().poll_next(cx) {
-            Poll::Ready(Some(Ok(mut bytes))) => {
-                let bytes_len = bytes.len();
-
-                trace!(
-                    "start {:?}, end {:?}, position {:?}",
-                    extractor.start, extractor.end, extractor.position
-                );
-
-                if extractor.position + bytes_len < extractor.start {
-                    extractor.position += bytes_len;
-                    return Pin::new(extractor).poll_next(cx);
-                }
-
-                if extractor.end < extractor.position {
-                    return Poll::Ready(None);
-                }
-
-                bytes.truncate(extractor.end - extractor.position + 1);
-
-                if extractor.position < extractor.start {
-                    bytes.advance(extractor.start - extractor.position);
-                }
-
-                extractor.position += bytes_len;
-                Poll::Ready(Some(Ok(bytes)))
+            if start < next_position {
+                bytes.truncate(end + 1 - position);
+                bytes.advance(start.saturating_sub(position));
+                yield bytes;
             }
-            p => p,
+
+            if end < next_position {
+                break;
+            }
+
+            position = next_position;
         }
     }
 }
@@ -80,7 +50,7 @@ mod tests {
         let expected = Bytes::from_static(b"12345");
 
         let s = make_stream(t);
-        let pe = PartialExtractor::new(s, start, end);
+        let pe = extract_range(s, start, end);
         let result = extract(pe);
 
         assert_eq!(expected, result);
@@ -94,7 +64,7 @@ mod tests {
         let expected = Bytes::from_static(b"234");
 
         let s = make_stream(t);
-        let pe = PartialExtractor::new(s, start, end);
+        let pe = extract_range(s, start, end);
         let result = extract(pe);
 
         assert_eq!(expected, result);
@@ -108,22 +78,35 @@ mod tests {
         let expected = Bytes::from_static(b"1234");
 
         let s = make_stream(t);
-        let pe = PartialExtractor::new(s, start, end);
+        let pe = extract_range(s, start, end);
         let result = extract(pe);
 
         assert_eq!(expected, result);
     }
 
-    fn make_stream(v: Vec<&[u8]>) -> Pin<Box<dyn Stream<Item = Result<Bytes, Error>>>> {
-        let t = v
-            .iter()
-            .map(|b| Ok(Bytes::copy_from_slice(b)))
-            .collect::<Vec<Result<Bytes, Error>>>();
+    #[test]
+    fn extracts_the_same_bytes_as_a_slice() {
+        use proptest::prelude::*;
 
-        Box::pin(iter(t))
+        proptest!(|(data in proptest::collection::vec(any::<u8>(), 1..300), piece_size in 1usize..50, a: usize, b: usize)| {
+            let start = a % data.len();
+            let end = start + b % (data.len() - start);
+
+            let pieces: Vec<&[u8]> = data.chunks(piece_size).collect();
+            let pe = extract_range(make_stream(pieces), start, end);
+
+            prop_assert_eq!(&data[start..=end], &extract(pe)[..]);
+        });
     }
 
-    fn extract(pe: PartialExtractor<Error>) -> Bytes {
+    fn make_stream(v: Vec<&[u8]>) -> impl Stream<Item = Result<Bytes, Error>> {
+        let items: Vec<Result<Bytes, Error>> =
+            v.iter().map(|b| Ok(Bytes::copy_from_slice(b))).collect();
+
+        iter(items)
+    }
+
+    fn extract(pe: impl Stream<Item = Result<Bytes, Error>>) -> Bytes {
         block_on(to_bytes(BodyStream::new(pe))).unwrap()
     }
 }
