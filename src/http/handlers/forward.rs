@@ -74,7 +74,7 @@ pub async fn forward(
         .map(|item| item.map_err(Error::from))
         .inspect_ok(move |bytes| hasher.borrow_mut().update(bytes));
 
-    let encrypted_body = encrypted_body::<Error>(
+    let encrypted_body = encrypted_body(
         key,
         key_id,
         DEFAULT_CHUNK_SIZE,
