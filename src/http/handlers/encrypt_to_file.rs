@@ -1,3 +1,4 @@
+use std::pin::pin;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 
 use crate::config::DEFAULT_CHUNK_SIZE;
@@ -16,7 +17,7 @@ pub async fn encrypt_to_file(
         .get_last_key()
         .expect("no key avalaible for encryption");
 
-    let mut encrypted_stream = Box::pin(encode(key, id, DEFAULT_CHUNK_SIZE, payload));
+    let mut encrypted_stream = pin!(encode(key, id, DEFAULT_CHUNK_SIZE, payload));
 
     log::info!("Encrypting to file: {}", filepath.display());
 

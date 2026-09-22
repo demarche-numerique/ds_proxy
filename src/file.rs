@@ -2,8 +2,8 @@ use super::config::*;
 use super::crypto::*;
 use actix_web::web::Bytes;
 use futures::executor::block_on;
-use futures::executor::block_on_stream;
-use futures::stream::Stream;
+use futures::future::ready;
+use futures::stream::{Stream, TryStreamExt};
 use std::fs::File;
 use std::io::{self, Read, Write};
 
@@ -14,12 +14,13 @@ pub fn encrypt(config: EncryptConfig) {
         .expect("no key avalaible for encryption");
 
     let input = read_in_blocks(File::open(config.input_file).unwrap());
-    let encoder = Box::pin(encode(key, key_id, DEFAULT_CHUNK_SIZE, input));
-
     let mut output = File::create(config.output_file).unwrap();
-    for chunk in block_on_stream(encoder) {
-        output.write_all(&chunk.unwrap()).unwrap();
-    }
+
+    block_on(
+        encode(key, key_id, DEFAULT_CHUNK_SIZE, input)
+            .try_for_each(|chunk| ready(output.write_all(&chunk))),
+    )
+    .unwrap();
 }
 
 pub fn decrypt(config: DecryptConfig) {
@@ -27,12 +28,13 @@ pub fn decrypt(config: DecryptConfig) {
 
     let (cypher_type, buff) = block_on(read_ds_header(&mut input));
 
-    let decoder = Box::pin(decode(config.keyring.clone(), input, cypher_type, buff));
-
     let mut output = File::create(config.output_file).unwrap();
-    for chunk in block_on_stream(decoder) {
-        output.write_all(&chunk.unwrap()).unwrap();
-    }
+
+    block_on(
+        decode(config.keyring.clone(), input, cypher_type, buff)
+            .try_for_each(|chunk| ready(output.write_all(&chunk))),
+    )
+    .unwrap();
 }
 
 fn read_in_blocks(mut file: File) -> impl Stream<Item = io::Result<Bytes>> + Unpin {
