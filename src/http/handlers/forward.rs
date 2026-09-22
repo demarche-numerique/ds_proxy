@@ -47,15 +47,15 @@ pub async fn forward(
         .force_close()
         .timeout(UPLOAD_TIMEOUT);
 
-    if let Some(length) = content_length(req.headers()) {
-        if flavor == Flavor::S3 {
-            log::info!(
-                "Adding x-amz-meta-original-content-length header with length {}",
-                length
-            );
-            forwarded_req = forwarded_req
-                .insert_header(("x-amz-meta-original-content-length", length.to_string()));
-        }
+    if let Some(length) = content_length(req.headers())
+        && flavor == Flavor::S3
+    {
+        log::info!(
+            "Adding x-amz-meta-original-content-length header with length {}",
+            length
+        );
+        forwarded_req =
+            forwarded_req.insert_header(("x-amz-meta-original-content-length", length.to_string()));
     }
 
     let forward_length: Option<usize> = content_length(req.headers())
