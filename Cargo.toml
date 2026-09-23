@@ -32,6 +32,7 @@ md-5 = "*"
 sha2 = "*"
 aws-credential-types = "*"
 aws-sigv4 = "*"
+async-stream = "*"
 
 [dev-dependencies]
 assert_cmd = "*"

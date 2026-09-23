@@ -4,28 +4,45 @@ mod encoder;
 pub mod header;
 mod header_decoder;
 
-pub use self::decoder::Decoder;
-pub use self::encoder::Encoder;
+pub use self::decoder::decode;
+pub use self::encoder::encode;
 pub use self::header::Header;
-pub use self::header_decoder::HeaderDecoder;
+pub use self::header_decoder::read_ds_header;
 
+use actix_web::Error;
+use actix_web::body::{BodyStream, EitherBody, MessageBody, SizedStream};
+use actix_web::web::Bytes;
 use decipher_type::DecipherType;
+use futures::stream::Stream;
 use header::*;
+use libsodium_rs::crypto_secretstream::Key;
 use libsodium_rs::crypto_secretstream::xchacha20poly1305::{ABYTES, HEADERBYTES};
+
+pub fn encrypted_body(
+    key: Key,
+    key_id: u64,
+    chunk_size: usize,
+    clear_length: Option<usize>,
+    input: impl Stream<Item = Result<Bytes, Error>> + 'static,
+) -> impl MessageBody {
+    let encrypted = encode(key, key_id, chunk_size, input);
+
+    match clear_length {
+        Some(length) => EitherBody::left(SizedStream::new(
+            encrypted_content_length(length, chunk_size) as u64,
+            encrypted,
+        )),
+        None => EitherBody::right(BodyStream::new(encrypted)),
+    }
+}
 
 pub fn encrypted_content_length(clear_length: usize, chunk_size: usize) -> usize {
     if clear_length == 0 {
         return 0;
     }
 
-    let nb_chunk = clear_length / chunk_size;
-    let remainder = clear_length % chunk_size;
-
-    if remainder == 0 {
-        HEADER_V2_SIZE + HEADERBYTES + nb_chunk * (ABYTES + chunk_size)
-    } else {
-        HEADER_V2_SIZE + HEADERBYTES + nb_chunk * (ABYTES + chunk_size) + ABYTES + remainder
-    }
+    // Every chunk, including the last partial one, carries its own ABYTES tag.
+    HEADER_V2_SIZE + HEADERBYTES + clear_length + ABYTES * clear_length.div_ceil(chunk_size)
 }
 
 pub fn decrypted_content_length(encrypted_length: usize, decipher: DecipherType) -> usize {
@@ -39,24 +56,11 @@ pub fn decrypted_content_length(encrypted_length: usize, decipher: DecipherType)
             header_size,
             ..
         } => {
-            // encrypted = header_ds + header_crypto + n ( abytes + chunk ) + a (abytes + remainder)
-            // with remainder < chunk and a = 0 if remainder = 0, a = 1 otherwise
-            //
-            //  encrypted - header_ds - header_crypto = n ( abytes + chunk ) + a (abytes + remainder)
-            //
-            //  integer_part ((encrypted - header_ds - header_crypto) / ( abytes + chunk ))
-            //    = integer_part ( n + a (abytes + remainder) / (abytes + chunk) )
-            //    = n
-
-            let nb_chunk = (encrypted_length - header_size - HEADERBYTES) / (ABYTES + chunk_size);
-            let remainder_exists =
-                !(encrypted_length - header_size - HEADERBYTES).is_multiple_of(ABYTES + chunk_size);
-
-            if remainder_exists {
-                encrypted_length - header_size - HEADERBYTES - (nb_chunk + 1) * ABYTES
-            } else {
-                encrypted_length - header_size - HEADERBYTES - nb_chunk * ABYTES
-            }
+            // The inverse of encrypted_content_length: a body of n full chunks
+            // plus an optional remainder holds exactly div_ceil tags, since a
+            // remainder is shorter than a full chunk.
+            let body = encrypted_length - header_size - HEADERBYTES;
+            body - ABYTES * body.div_ceil(ABYTES + chunk_size)
         }
 
         DecipherType::Plaintext => encrypted_length,
@@ -66,6 +70,26 @@ pub fn decrypted_content_length(encrypted_length: usize, decipher: DecipherType)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    #[test]
+    fn decrypted_content_length_inverts_encrypted_content_length() {
+        proptest!(|(clear_length in 0usize..100_000, chunk_size in 1usize..10_000)| {
+            let encrypted_length = encrypted_content_length(clear_length, chunk_size);
+
+            prop_assert_eq!(
+                clear_length,
+                decrypted_content_length(
+                    encrypted_length,
+                    DecipherType::Encrypted {
+                        chunk_size,
+                        key_id: 0,
+                        header_size: HEADER_V2_SIZE,
+                    },
+                )
+            );
+        });
+    }
 
     #[test]
     fn test_decrypt_content_length_from_0() {

@@ -43,6 +43,40 @@ fn encrypt_and_decrypt() {
     assert_eq!(COMPUTER_SVG_BYTES, decrypted_bytes);
 }
 
+// The CLI reads its input block by block: a file of several blocks, whose
+// size falls on no block boundary, must come back whole.
+#[test]
+fn encrypt_and_decrypt_a_file_of_several_blocks() {
+    let temp = TempDir::new().unwrap();
+
+    let clear = temp.child("several_blocks");
+    let encrypted = temp.child("several_blocks.enc");
+    let decrypted = temp.child("several_blocks.dec");
+
+    let clear_bytes: Vec<u8> = (0..3 * 16 * 1024 + 1234).map(|i| (i % 251) as u8).collect();
+    clear.write_binary(&clear_bytes).unwrap();
+
+    Command::new(cargo::cargo_bin!("ds_proxy"))
+        .arg("encrypt")
+        .arg(clear.path())
+        .arg(encrypted.path())
+        .env("DS_KEYRING", DS_KEYRING)
+        .env("DS_PASSWORD", PASSWORD)
+        .assert()
+        .success();
+
+    Command::new(cargo::cargo_bin!("ds_proxy"))
+        .arg("decrypt")
+        .arg(encrypted.path())
+        .arg(decrypted.path())
+        .env("DS_KEYRING", DS_KEYRING)
+        .env("DS_PASSWORD", PASSWORD)
+        .assert()
+        .success();
+
+    assert_eq!(clear_bytes, read(decrypted.path()).unwrap());
+}
+
 #[test]
 fn decrypt_witness_file() {
     let temp = TempDir::new().unwrap();

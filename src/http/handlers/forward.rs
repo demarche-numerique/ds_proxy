@@ -3,9 +3,8 @@ use crate::http::utils::flavor::{Flavor, route};
 use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
-use actix_web::body::SizedStream;
 use futures::StreamExt;
-use md5::{Digest, Md5, digest::DynDigest};
+use md5::{Digest, Md5};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -58,9 +57,6 @@ pub async fn forward(
             forwarded_req.insert_header(("x-amz-meta-original-content-length", length.to_string()));
     }
 
-    let forward_length: Option<usize> = content_length(req.headers())
-        .map(|content_length| encrypted_content_length(content_length, DEFAULT_CHUNK_SIZE));
-
     for header in &FORWARD_REQUEST_HEADERS_TO_REMOVE {
         forwarded_req.headers_mut().remove(header);
     }
@@ -70,15 +66,20 @@ pub async fn forward(
         .get_last_key()
         .expect("no key avalaible for encryption");
 
-    let convert_payload = payload.map(|item| item.map_err(Error::from));
-    let md5_hasher: Rc<RefCell<Box<dyn DynDigest>>> = Rc::new(RefCell::new(Box::new(Md5::new())));
-    let hasher_clone = Rc::clone(&md5_hasher);
-    let encrypted_stream = Encoder::<Error>::new(
+    // The etag we answer is the md5 of the cleartext the client sent, so the
+    // payload is hashed on its way into the encoder, not inside it.
+    let md5_hasher = Rc::new(RefCell::new(Md5::new()));
+    let hasher = Rc::clone(&md5_hasher);
+    let hashed_payload = payload
+        .map(|item| item.map_err(Error::from))
+        .inspect_ok(move |bytes| hasher.borrow_mut().update(bytes));
+
+    let encrypted_body = encrypted_body(
         key,
         key_id,
         DEFAULT_CHUNK_SIZE,
-        Box::new(convert_payload),
-        Some(hasher_clone),
+        content_length(req.headers()),
+        hashed_payload,
     );
 
     let final_req = match (flavor, config.s3_config.clone()) {
@@ -88,15 +89,7 @@ pub async fn forward(
         _ => forwarded_req,
     };
 
-    let res_e = if let Some(length) = forward_length {
-        final_req
-            .send_body(SizedStream::new(length as u64, encrypted_stream))
-            .await
-    } else {
-        final_req.send_stream(encrypted_stream).await
-    };
-
-    let mut res = res_e.map_err(|e| {
+    let mut res = final_req.send_body(encrypted_body).await.map_err(|e| {
         error!(
             "forward fwk error {:?} for {} {}",
             e,
@@ -129,11 +122,7 @@ pub async fn forward(
         client_resp.append_header(header);
     }
 
-    let etag = {
-        let hasher_guard = md5_hasher.borrow();
-        let hash_result = hasher_guard.clone().finalize();
-        hex::encode(&hash_result[..])
-    };
+    let etag = hex::encode(md5_hasher.borrow().clone().finalize());
 
     client_resp.insert_header(("etag", format!("\"{}\"", etag)));
 

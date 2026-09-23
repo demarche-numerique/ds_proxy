@@ -69,8 +69,10 @@ Chaque invariant indique où il est appliqué et le test qui le couvre. Une
 modification qui en affaiblit un doit être discutée avant d'être écrite.
 
 1. **Le stockage ne reçoit que du chiffré, le client ne reçoit que du
-   déchiffré.** `forward` passe tout corps par l'`Encoder`, `fetch` par le
-   `Decoder`. Le contenu en clair n'existe qu'en mémoire du proxy.
+   déchiffré.** `forward` passe tout corps par `encode`, `fetch` par
+   `decode`. Le contenu en clair n'existe qu'en mémoire du proxy. La
+   longueur annoncée à l'amont est celle que l'encodeur produit :
+   `encrypted_body` construit les deux ensemble.
    Tests : `tests/upload_and_download.rs`, `tests/encryption_tests.rs`.
 2. **Une requête S3 sur `/upstream` n'est relayée que si sa signature SigV4
    est valide pour les credentials du proxy.** Une signature valide ne peut

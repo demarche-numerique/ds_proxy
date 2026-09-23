@@ -6,7 +6,6 @@ use crate::http::utils::{
 };
 use actix_files::HttpRange;
 use actix_web::http::StatusCode;
-use actix_web::web::Bytes;
 
 pub async fn fetch(
     req: HttpRequest,
@@ -37,7 +36,7 @@ pub async fn fetch(
         _ => fetch_req,
     };
 
-    let res = req_to_send.send_body(body).await.map_err(|e| {
+    let mut res = req_to_send.send_body(body).await.map_err(|e| {
         error!("fetch error {:?} for {} {}", e, req.method(), req.path());
         match e {
             awc::error::SendRequestError::Timeout => actix_web::error::ErrorGatewayTimeout(e),
@@ -72,14 +71,12 @@ pub async fn fetch(
 
     let original_length = content_length(res.headers());
 
-    let mut boxy: Box<dyn Stream<Item = Result<Bytes, _>> + Unpin> = Box::new(res);
-    let header_decoder = HeaderDecoder::new(&mut boxy);
-    let (cypher_type, buff) = header_decoder.await;
+    let (cypher_type, buff) = read_ds_header(&mut res).await;
+
     let fetch_length =
         original_length.map(|content_length| decrypted_content_length(content_length, cypher_type));
 
-    let decoder =
-        Decoder::new_from_cypher_and_buffer(config.keyring.clone(), boxy, cypher_type, buff);
+    let decoder = decode(config.keyring.clone(), res, cypher_type, buff);
 
     if let Some(length) = fetch_length {
         let range = raw_range.map(|r| HttpRange::parse(r, length.try_into().unwrap()));
@@ -94,7 +91,7 @@ pub async fn fetch(
                 let range_start = r.start.try_into().unwrap();
                 let range_end = (r.start + r.length - 1).try_into().unwrap();
 
-                let pe = PartialExtractor::new(Box::new(decoder), range_start, range_end);
+                let pe = extract_range(decoder, range_start, range_end);
 
                 client_resp.append_header((
                     header::CONTENT_RANGE,
