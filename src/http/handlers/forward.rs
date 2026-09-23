@@ -1,6 +1,5 @@
 use crate::config::DEFAULT_CHUNK_SIZE;
 use crate::http::utils::flavor::{Flavor, route};
-use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
 use futures::StreamExt;
@@ -81,45 +80,16 @@ pub async fn forward(
         hashed_payload,
     );
 
-    let final_req = match (flavor, &config.s3_config) {
-        (Flavor::S3, Some(s3_config)) => {
-            config.apply_s3_connect_url(sign_request(forwarded_req, s3_config))
-        }
-        _ => forwarded_req,
-    };
-
-    let mut res = final_req.send_body(encrypted_body).await.map_err(|e| {
-        error!(
-            "forward fwk error {:?} for {} {}",
-            e,
-            req.method(),
-            req.path()
-        );
-        actix_web::error::ErrorBadGateway(e)
-    })?;
+    let mut res = sign_for_upstream(&config, flavor, forwarded_req)
+        .send_body(encrypted_body)
+        .await
+        .map_err(|e| upstream_error(&req, e))?;
 
     trace!("backend response for PUT {:?} : {:?}", put_url, res);
 
     refuse_redirect(&req, res.status())?;
 
-    if res.status().is_client_error() || res.status().is_server_error() {
-        error!(
-            "forward status error {} for {} {}",
-            res.status(),
-            req.method(),
-            req.path()
-        );
-    }
-
-    let mut client_resp = HttpResponse::build(res.status());
-
-    for header in res
-        .headers()
-        .iter()
-        .filter(|(h, _)| !FORWARD_RESPONSE_HEADERS_TO_REMOVE.contains(h))
-    {
-        client_resp.append_header(header);
-    }
+    let mut client_resp = client_response(&req, &res, &FORWARD_RESPONSE_HEADERS_TO_REMOVE);
 
     let etag = hex::encode(md5_hasher.borrow().clone().finalize());
 

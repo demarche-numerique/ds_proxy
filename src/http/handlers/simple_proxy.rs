@@ -1,7 +1,7 @@
 use actix_web::http::Method;
 
 use crate::http::utils::flavor::{Flavor, route};
-use crate::http::utils::s3_helper::{sign_request, upstream_host};
+use crate::http::utils::s3_helper::upstream_host;
 
 use super::*;
 
@@ -25,55 +25,25 @@ pub async fn simple_proxy(
     // nobody authenticated (the signature check skips OPTIONS). It still
     // needs the upstream's Host, which sign_request would otherwise have set.
     let req_to_send = match (flavor, &config.s3_config) {
-        (Flavor::S3, Some(s3_config)) if req.method() != Method::OPTIONS => {
-            config.apply_s3_connect_url(sign_request(proxied_req, s3_config))
-        }
-        (Flavor::S3, Some(_)) => {
+        (Flavor::S3, Some(_)) if req.method() == Method::OPTIONS => {
             let host = upstream_host(proxied_req.get_uri());
             config.apply_s3_connect_url(proxied_req.insert_header(("host", host)))
         }
-        _ => proxied_req,
+        _ => sign_for_upstream(&config, flavor, proxied_req),
     };
 
-    req_to_send
+    let res = req_to_send
         .send_stream(payload)
         .await
-        .map_err(|e| {
-            error!(
-                "simple proxy fwk error {:?} for {} {}",
-                e,
-                req.method(),
-                req.path()
-            );
-            actix_web::error::ErrorBadGateway(e)
-        })
-        .map(|res| {
-            if res.status().is_client_error() || res.status().is_server_error() {
-                error!(
-                    "simple proxy status error {} for {} {}",
-                    res.status(),
-                    req.method(),
-                    req.path()
-                );
-            }
+        .map_err(|e| upstream_error(&req, e))?;
 
-            let mut client_resp = HttpResponse::build(res.status());
+    let mut client_resp = client_response(&req, &res, &FETCH_RESPONSE_HEADERS_TO_REMOVE);
 
-            for header in res
-                .headers()
-                .iter()
-                .filter(|(h, _)| !FETCH_RESPONSE_HEADERS_TO_REMOVE.contains(h))
-            {
-                client_resp.append_header(header);
-            }
+    if req.method() == Method::HEAD
+        && let Some(content_length) = res.headers().get("x-amz-meta-original-content-length")
+    {
+        client_resp.insert_header(("content-length", content_length.clone()));
+    }
 
-            if req.method() == Method::HEAD
-                && let Some(content_length) =
-                    res.headers().get("x-amz-meta-original-content-length")
-            {
-                client_resp.insert_header(("content-length", content_length.clone()));
-            }
-
-            client_resp.streaming(res)
-        })
+    Ok(client_resp.streaming(res))
 }

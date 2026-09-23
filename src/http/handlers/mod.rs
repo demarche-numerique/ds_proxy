@@ -15,10 +15,13 @@ pub use simple_proxy::simple_proxy;
 // shared import between handlers
 use super::super::config::HttpConfig;
 use super::super::crypto::*;
+use super::utils::flavor::Flavor;
+use super::utils::s3_helper::sign_request;
 use super::utils::*;
 use actix_web::http::{StatusCode, header};
-use actix_web::{Error, HttpRequest, HttpResponse, web};
-use awc::Client;
+use actix_web::{Error, HttpRequest, HttpResponse, HttpResponseBuilder, web};
+use awc::error::SendRequestError;
+use awc::{Client, ClientRequest, ClientResponse};
 use futures::TryStreamExt;
 use log::{error, trace};
 
@@ -38,6 +41,52 @@ pub static FETCH_REQUEST_HEADERS_TO_REMOVE: [header::HeaderName; 2] = [
     header::CONNECTION,
     header::RANGE,
 ];
+
+// An S3 request goes out signed with the proxy's credentials, towards the
+// connect target if one is configured. A Swift request goes out as is.
+pub fn sign_for_upstream(config: &HttpConfig, flavor: Flavor, req: ClientRequest) -> ClientRequest {
+    match (flavor, &config.s3_config) {
+        (Flavor::S3, Some(s3_config)) => config.apply_s3_connect_url(sign_request(req, s3_config)),
+        _ => req,
+    }
+}
+
+pub fn upstream_error(req: &HttpRequest, e: SendRequestError) -> Error {
+    error!("upstream error {:?} for {} {}", e, req.method(), req.path());
+    match e {
+        SendRequestError::Timeout => actix_web::error::ErrorGatewayTimeout(e),
+        _ => actix_web::error::ErrorBadGateway(e),
+    }
+}
+
+// The response to the client starts as the upstream's: same status, same
+// headers but the ones the handler has to drop.
+pub fn client_response<S>(
+    req: &HttpRequest,
+    res: &ClientResponse<S>,
+    headers_to_remove: &[header::HeaderName],
+) -> HttpResponseBuilder {
+    if res.status().is_client_error() || res.status().is_server_error() {
+        error!(
+            "upstream status error {} for {} {}",
+            res.status(),
+            req.method(),
+            req.path()
+        );
+    }
+
+    let mut client_resp = HttpResponse::build(res.status());
+
+    for header in res
+        .headers()
+        .iter()
+        .filter(|(h, _)| !headers_to_remove.contains(h))
+    {
+        client_resp.append_header(header);
+    }
+
+    client_resp
+}
 
 // An upstream redirect on an encrypting path (fetch, forward) is neither
 // followed nor relayed. Following it would resend the body empty or turn
