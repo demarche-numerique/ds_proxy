@@ -6,7 +6,6 @@ use core::task::{Context, Poll};
 use futures::future::Future;
 use futures::stream::Stream;
 use log::{error, trace};
-use std::convert::TryInto;
 use std::fmt::Debug;
 
 pub struct HeaderDecoder<'a, E> {
@@ -47,9 +46,7 @@ impl<E> HeaderDecoder<'_, E> {
             let _ = self.buffer.split_to(header::HEADER_SIZE);
             trace!(
                 "header version: {:?}, chunk_size: {:?}, key_id: {:?}",
-                version,
-                chunk_size,
-                0
+                version, chunk_size, 0
             );
             return ParseHeaderResponse::DecipherType(DecipherType::Encrypted {
                 chunk_size,
@@ -68,9 +65,7 @@ impl<E> HeaderDecoder<'_, E> {
 
         trace!(
             "header version: {:?}, chunk_size: {:?}, key_id: {:?}",
-            version,
-            chunk_size,
-            key_id
+            version, chunk_size, key_id
         );
 
         let _ = self.buffer.split_to(header::HEADER_V2_SIZE);

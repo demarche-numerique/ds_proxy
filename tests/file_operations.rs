@@ -1,7 +1,7 @@
 use assert_cmd::cargo;
 use assert_cmd::prelude::*;
-use assert_fs::prelude::*;
 use assert_fs::TempDir;
+use assert_fs::prelude::*;
 use std::fs::read;
 use std::process::Command;
 

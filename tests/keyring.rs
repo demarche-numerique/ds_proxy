@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use assert_fs::prelude::*;
 use ds_proxy::crypto::header;
 

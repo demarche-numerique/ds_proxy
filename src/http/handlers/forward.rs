@@ -1,11 +1,11 @@
 use crate::config::DEFAULT_CHUNK_SIZE;
-use crate::http::utils::flavor::{route, Flavor};
+use crate::http::utils::flavor::{Flavor, route};
 use crate::http::utils::s3_helper::sign_request;
 
 use super::*;
 use actix_web::body::SizedStream;
 use futures::StreamExt;
-use md5::{digest::DynDigest, Digest, Md5};
+use md5::{Digest, Md5, digest::DynDigest};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -47,15 +47,15 @@ pub async fn forward(
         .force_close()
         .timeout(UPLOAD_TIMEOUT);
 
-    if let Some(length) = content_length(req.headers()) {
-        if flavor == Flavor::S3 {
-            log::info!(
-                "Adding x-amz-meta-original-content-length header with length {}",
-                length
-            );
-            forwarded_req = forwarded_req
-                .insert_header(("x-amz-meta-original-content-length", length.to_string()));
-        }
+    if let Some(length) = content_length(req.headers())
+        && flavor == Flavor::S3
+    {
+        log::info!(
+            "Adding x-amz-meta-original-content-length header with length {}",
+            length
+        );
+        forwarded_req =
+            forwarded_req.insert_header(("x-amz-meta-original-content-length", length.to_string()));
     }
 
     let forward_length: Option<usize> = content_length(req.headers())

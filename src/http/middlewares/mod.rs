@@ -1,15 +1,16 @@
 use super::super::config::HttpConfig;
-use super::utils::flavor::{detect_flavor, Flavor};
+use super::utils::flavor::{Flavor, detect_flavor};
 use super::utils::presigned::PresignedQuery;
 use super::utils::verify_signature::{is_signature_valid, unsigned_amz_headers};
 use crate::write_once_service::WriteOnceService;
 use actix_web::http::{Method, Uri};
 use actix_web::{
+    Error,
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
     error::{ErrorForbidden, ErrorUnauthorized},
     middleware::Next,
-    web, Error,
+    web,
 };
 use chrono::Utc;
 use std::path::Path;
@@ -67,10 +68,11 @@ pub async fn ensure_write_once(
     // (upstream refusal, proxy error) stored nothing, so the credential
     // must stay usable.
     let succeeded = matches!(&result, Ok(response) if response.status().is_success());
-    if locked && !succeeded {
-        if let Err(err) = write_once_service.unlock(&path).await {
-            log::error!("Failed to release write-once lock on {}: {}", path, err);
-        }
+    if locked
+        && !succeeded
+        && let Err(err) = write_once_service.unlock(&path).await
+    {
+        log::error!("Failed to release write-once lock on {}: {}", path, err);
     }
 
     result
@@ -102,32 +104,33 @@ pub async fn verify_s3_signature(
     // treated as S3 when credentials are configured (unchanged behavior).
     let is_s3_request = !config.dual || detect_flavor(service_request.request()) == Flavor::S3;
 
-    if let Some(s3_config) = config.s3_config.clone() {
-        if is_s3_request && !s3_config.bypass_signature_check {
-            if !is_signature_valid(service_request.request(), s3_config) {
-                log::warn!(
-                    "Invalid S3 signature for {} {}",
-                    service_request.method(),
-                    service_request.path()
-                );
-                return Err(ErrorUnauthorized("Invalid S3 signature"));
-            }
+    if let Some(s3_config) = config.s3_config.clone()
+        && is_s3_request
+        && !s3_config.bypass_signature_check
+    {
+        if !is_signature_valid(service_request.request(), s3_config) {
+            log::warn!(
+                "Invalid S3 signature for {} {}",
+                service_request.method(),
+                service_request.path()
+            );
+            return Err(ErrorUnauthorized("Invalid S3 signature"));
+        }
 
-            // The signature only vouches for the headers the client signed.
-            // Every other x-amz- header would be re-signed by the proxy with
-            // its own credentials, so refuse them like S3 does.
-            let unsigned = unsigned_amz_headers(service_request.request());
-            if !unsigned.is_empty() {
-                log::warn!(
-                    "Unsigned x-amz- headers {:?} for {} {}",
-                    unsigned,
-                    service_request.method(),
-                    service_request.path()
-                );
-                return Err(ErrorForbidden(
-                    "There were headers present in the request which were not signed",
-                ));
-            }
+        // The signature only vouches for the headers the client signed.
+        // Every other x-amz- header would be re-signed by the proxy with
+        // its own credentials, so refuse them like S3 does.
+        let unsigned = unsigned_amz_headers(service_request.request());
+        if !unsigned.is_empty() {
+            log::warn!(
+                "Unsigned x-amz- headers {:?} for {} {}",
+                unsigned,
+                service_request.method(),
+                service_request.path()
+            );
+            return Err(ErrorForbidden(
+                "There were headers present in the request which were not signed",
+            ));
         }
     }
 

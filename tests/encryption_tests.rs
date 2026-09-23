@@ -2,11 +2,11 @@ extern crate ds_proxy;
 
 use ds_proxy::crypto::*;
 use ds_proxy::keyring::Keyring;
-use libsodium_rs::crypto_secretstream::xchacha20poly1305::{Key, KEYBYTES};
+use libsodium_rs::crypto_secretstream::xchacha20poly1305::{KEYBYTES, Key};
 use std::collections::HashMap;
 
-use actix_web::web::{BufMut, Bytes, BytesMut};
 use actix_web::Error;
+use actix_web::web::{BufMut, Bytes, BytesMut};
 use futures::executor::{block_on, block_on_stream};
 
 use proptest::prelude::*;

@@ -1,8 +1,8 @@
 use assert_cmd::cargo;
 pub use serial_test::serial;
 
-use actix_web::web::{BufMut, Bytes, BytesMut};
 use actix_web::Error;
+use actix_web::web::{BufMut, Bytes, BytesMut};
 use assert_cmd::prelude::*;
 use futures::executor::{block_on, block_on_stream};
 use std::path::Path;

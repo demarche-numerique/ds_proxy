@@ -1,6 +1,6 @@
 use actix_web::http::Method;
 
-use crate::http::utils::flavor::{route, Flavor};
+use crate::http::utils::flavor::{Flavor, route};
 use crate::http::utils::s3_helper::{sign_request, upstream_host};
 
 use super::*;
@@ -68,12 +68,11 @@ pub async fn simple_proxy(
                 client_resp.append_header(header);
             }
 
-            if req.method() == Method::HEAD {
-                if let Some(content_length) =
+            if req.method() == Method::HEAD
+                && let Some(content_length) =
                     res.headers().get("x-amz-meta-original-content-length")
-                {
-                    client_resp.insert_header(("content-length", content_length.clone()));
-                }
+            {
+                client_resp.insert_header(("content-length", content_length.clone()));
             }
 
             client_resp.streaming(res)

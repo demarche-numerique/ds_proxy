@@ -1,7 +1,7 @@
 use super::config::*;
 use super::crypto::*;
-use actix_web::web::{BufMut, Bytes, BytesMut};
 use actix_web::Error;
+use actix_web::web::{BufMut, Bytes, BytesMut};
 use futures::executor::block_on;
 use futures::executor::block_on_stream;
 

@@ -1,9 +1,9 @@
-use super::header::{Header, HEADER_SIZE};
+use super::header::{HEADER_SIZE, Header};
 use actix_web::web::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures::stream::Stream;
-use libsodium_rs::crypto_secretstream::{xchacha20poly1305::TAG_MESSAGE, Key, PushState};
+use libsodium_rs::crypto_secretstream::{Key, PushState, xchacha20poly1305::TAG_MESSAGE};
 use log::trace;
 use md5::digest::DynDigest;
 use std::cell::RefCell;

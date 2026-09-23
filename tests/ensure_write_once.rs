@@ -1,8 +1,8 @@
 extern crate ds_proxy;
 
+use actix_web::HttpResponse;
 use actix_web::guard::Get;
 use actix_web::web::resource;
-use actix_web::HttpResponse;
 use ds_proxy::http::middlewares::ensure_write_once;
 use ds_proxy::redis_config::RedisConfig;
 use std::thread;
@@ -37,7 +37,7 @@ fn launch_redis_with_delay() -> ChildGuard {
 mod tests {
 
     use super::*;
-    use actix_web::{middleware::from_fn, test, web, App};
+    use actix_web::{App, middleware::from_fn, test, web};
     use deadpool_redis::redis::AsyncCommands;
     use ds_proxy::{redis_utils::configure_redis_pool, write_once_service::WriteOnceService};
 
