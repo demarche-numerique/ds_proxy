@@ -337,29 +337,29 @@ fn normalize_and_parse_upstream_url(mut url: String) -> Url {
     Url::parse(&url).unwrap()
 }
 
+// Build the upstream URL for a request, given the already-resolved upstream
+// base (see http::utils::flavor::route). The base always ends with '/'.
+pub fn create_upstream_url(req: &HttpRequest, base: &Url) -> String {
+    let raw_path = req.uri().path();
+    // Strip the /upstream/ prefix to get the raw tail, preserving original encoding
+    let tail = raw_path
+        .strip_prefix("/upstream/")
+        .or_else(|| raw_path.strip_prefix("/upstream"))
+        .unwrap_or("");
+
+    let base = base.as_str(); // always ends with '/'
+    let url = if req.query_string().is_empty() {
+        format!("{}{}", base, tail)
+    } else {
+        format!("{}{}?{}", base, tail, req.query_string())
+    };
+
+    log::debug!("Created upstream url: {}", url);
+
+    url
+}
+
 impl HttpConfig {
-    // Build the upstream URL for a request, given the already-resolved upstream
-    // base (see http::utils::flavor::route). The base always ends with '/'.
-    pub fn create_upstream_url(&self, req: &HttpRequest, base: &Url) -> String {
-        let raw_path = req.uri().path();
-        // Strip the /upstream/ prefix to get the raw tail, preserving original encoding
-        let tail = raw_path
-            .strip_prefix("/upstream/")
-            .or_else(|| raw_path.strip_prefix("/upstream"))
-            .unwrap_or("");
-
-        let base = base.as_str(); // always ends with '/'
-        let url = if req.query_string().is_empty() {
-            format!("{}{}", base, tail)
-        } else {
-            format!("{}{}?{}", base, tail, req.query_string())
-        };
-
-        log::debug!("Created upstream url: {}", url);
-
-        url
-    }
-
     // Points an already-signed request at the connect target, if one is
     // configured. Only the dialed scheme/host/port change; the signature and the
     // Host header stay on the upstream.
@@ -586,7 +586,7 @@ mod tests {
     // Builds the upstream url using the config's S3 upstream as the base, the
     // way a routed S3 request would.
     fn upstream_url(config: &HttpConfig, req: &HttpRequest) -> String {
-        config.create_upstream_url(req, config.s3_upstream_base_url.as_ref().unwrap())
+        create_upstream_url(req, config.s3_upstream_base_url.as_ref().unwrap())
     }
 
     fn default_config(upstream_base_url: &str) -> HttpConfig {

@@ -38,8 +38,7 @@ pub async fn forward(
     client: web::Data<Client>,
     config: web::Data<HttpConfig>,
 ) -> Result<HttpResponse, Error> {
-    let (flavor, base) = route(&config, &req);
-    let put_url = config.create_upstream_url(&req, base);
+    let (flavor, put_url) = route(&config, &req);
 
     let mut forwarded_req = client
         .request_from(put_url.clone(), req.head())

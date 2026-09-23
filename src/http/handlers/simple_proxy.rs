@@ -11,8 +11,7 @@ pub async fn simple_proxy(
     client: web::Data<Client>,
     config: web::Data<HttpConfig>,
 ) -> Result<HttpResponse, Error> {
-    let (flavor, base) = route(&config, &req);
-    let url = config.create_upstream_url(&req, base);
+    let (flavor, url) = route(&config, &req);
 
     let mut proxied_req = client.request_from(url, req.head()).force_close();
 

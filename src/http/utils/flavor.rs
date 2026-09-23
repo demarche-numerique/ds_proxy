@@ -1,7 +1,6 @@
 use actix_web::HttpRequest;
-use url::Url;
 
-use crate::config::HttpConfig;
+use crate::config::{HttpConfig, create_upstream_url};
 
 /// Which storage API a given request speaks.
 ///
@@ -29,11 +28,11 @@ pub fn detect_flavor(req: &HttpRequest) -> Flavor {
     }
 }
 
-/// Resolve which flavor a request is served as, and the upstream to forward it
-/// to. Per-request detection only happens in dual mode; in single mode every
+/// Resolve which flavor a request is served as, and the upstream URL to forward
+/// it to. Per-request detection only happens in dual mode; in single mode every
 /// request is forced to the configured backend (S3 when credentials are set,
 /// otherwise Swift), so unsigned clients keep working as before.
-pub fn route<'a>(config: &'a HttpConfig, req: &HttpRequest) -> (Flavor, &'a Url) {
+pub fn route(config: &HttpConfig, req: &HttpRequest) -> (Flavor, String) {
     let flavor = if config.dual {
         detect_flavor(req)
     } else if config.s3_config.is_some() {
@@ -48,7 +47,7 @@ pub fn route<'a>(config: &'a HttpConfig, req: &HttpRequest) -> (Flavor, &'a Url)
     }
     .expect("upstream for the resolved flavor must be configured");
 
-    (flavor, base)
+    (flavor, create_upstream_url(req, base))
 }
 
 fn is_s3_signed(req: &HttpRequest) -> bool {

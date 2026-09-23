@@ -13,8 +13,7 @@ pub async fn fetch(
     client: web::Data<Client>,
     config: web::Data<HttpConfig>,
 ) -> Result<HttpResponse, Error> {
-    let (flavor, base) = route(&config, &req);
-    let get_url = config.create_upstream_url(&req, base);
+    let (flavor, get_url) = route(&config, &req);
 
     let mut fetch_req = client
         .request_from(get_url.clone(), req.head())
