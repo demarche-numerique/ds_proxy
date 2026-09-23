@@ -3,14 +3,12 @@ use super::handlers::*;
 use super::middlewares::*;
 use crate::redis_utils::configure_redis_pool;
 use crate::write_once_service::WriteOnceService;
-use actix_web::dev::Service;
 use actix_web::guard::{Get, Put};
 use actix_web::{
     App, HttpServer, middleware,
     middleware::from_fn,
     web::{Data, resource, scope},
 };
-use futures::FutureExt;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
@@ -68,12 +66,7 @@ pub async fn main(config: HttpConfig) -> std::io::Result<()> {
             .service(
                 scope("/local")
                     .service(resource("encrypt/{name}").guard(Put()).to(encrypt_to_file))
-                    .service(
-                        resource("encrypt/{name}")
-                            .guard(Get())
-                            .wrap_fn(|req, srv| srv.call(req).map(erase_file))
-                            .to(fetch_file),
-                    ),
+                    .service(resource("encrypt/{name}").guard(Get()).to(fetch_file)),
             );
 
         if config.write_once {

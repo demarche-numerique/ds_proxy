@@ -13,7 +13,6 @@ use actix_web::{
     web,
 };
 use chrono::Utc;
-use std::path::Path;
 use url::Url;
 
 pub async fn ensure_write_once(
@@ -135,21 +134,4 @@ pub async fn verify_s3_signature(
     }
 
     next.call(service_request).await
-}
-
-pub fn erase_file(res: Result<ServiceResponse, Error>) -> Result<ServiceResponse, Error> {
-    let response = res.unwrap();
-    let request = response.request();
-
-    let filepath = request
-        .app_data::<web::Data<HttpConfig>>()
-        .unwrap()
-        .local_encryption_path_for(request)
-        .unwrap();
-
-    if Path::new(&filepath).exists() {
-        std::fs::remove_file(filepath).unwrap();
-    }
-
-    Ok(response)
 }
