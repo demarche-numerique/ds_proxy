@@ -29,7 +29,7 @@ pub async fn fetch(
         fetch_req.headers_mut().remove(header);
     }
 
-    let req_to_send = match (flavor, config.s3_config.clone()) {
+    let req_to_send = match (flavor, &config.s3_config) {
         (Flavor::S3, Some(s3_config)) => {
             config.apply_s3_connect_url(sign_request(fetch_req, s3_config))
         }

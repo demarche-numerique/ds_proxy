@@ -82,7 +82,7 @@ pub async fn forward(
         hashed_payload,
     );
 
-    let final_req = match (flavor, config.s3_config.clone()) {
+    let final_req = match (flavor, &config.s3_config) {
         (Flavor::S3, Some(s3_config)) => {
             config.apply_s3_connect_url(sign_request(forwarded_req, s3_config))
         }

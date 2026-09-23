@@ -11,13 +11,13 @@ use crate::s3_config::S3Config;
 /// Clock skew tolerated around a signature's validity window, on both ends.
 pub const SIGNATURE_GRACE: Duration = Duration::from_mins(15);
 
-pub fn is_signature_valid(request: &HttpRequest, s3_config: S3Config) -> bool {
+pub fn is_signature_valid(request: &HttpRequest, s3_config: &S3Config) -> bool {
     is_signature_valid_with_date(request, s3_config, Utc::now())
 }
 
 fn is_signature_valid_with_date(
     request: &HttpRequest,
-    s3_config: S3Config,
+    s3_config: &S3Config,
     now: DateTime<Utc>,
 ) -> bool {
     log::info!(
@@ -248,7 +248,7 @@ mod tests {
 
         let now = to_utc_datetime("20251113T155445Z");
 
-        assert!(is_signature_valid_with_date(&request, config(), now));
+        assert!(is_signature_valid_with_date(&request, &config(), now));
     }
 
     #[test]
@@ -264,7 +264,7 @@ mod tests {
             .to_http_request();
 
         let now = to_utc_datetime("20251130T111327Z");
-        assert!(is_signature_valid_with_date(&request, config(), now));
+        assert!(is_signature_valid_with_date(&request, &config(), now));
     }
 
     #[test]
@@ -281,7 +281,7 @@ mod tests {
 
         let now = to_utc_datetime("20251117T151958Z");
 
-        assert!(is_signature_valid_with_date(&request, config(), now));
+        assert!(is_signature_valid_with_date(&request, &config(), now));
     }
 
     #[test]
@@ -301,7 +301,7 @@ mod tests {
 
         let now = to_utc_datetime("20251118T135750Z");
 
-        assert!(is_signature_valid_with_date(&request, config(), now));
+        assert!(is_signature_valid_with_date(&request, &config(), now));
     }
 
     // Valid signature over host;range;x-amz-checksum-mode;x-amz-content-sha256;x-amz-date
@@ -327,7 +327,7 @@ mod tests {
             .to_http_request();
 
         let now = to_utc_datetime("20251118T135750Z");
-        assert!(is_signature_valid_with_date(&request, config(), now));
+        assert!(is_signature_valid_with_date(&request, &config(), now));
 
         assert_eq!(
             unsigned_amz_headers(&request),
@@ -401,7 +401,7 @@ mod tests {
                 .to_http_request();
 
             assert!(
-                !is_signature_valid_with_date(&request, config(), now),
+                !is_signature_valid_with_date(&request, &config(), now),
                 "duplicated header ({}, {}) must not validate",
                 first,
                 second
@@ -425,7 +425,7 @@ mod tests {
 
         let now = to_utc_datetime("20251201T073220Z");
 
-        assert!(is_signature_valid_with_date(&request, config(), now));
+        assert!(is_signature_valid_with_date(&request, &config(), now));
     }
 
     #[test]
@@ -444,6 +444,6 @@ mod tests {
 
         let now = to_utc_datetime("20251201T073226Z");
 
-        assert!(is_signature_valid_with_date(&request, config(), now));
+        assert!(is_signature_valid_with_date(&request, &config(), now));
     }
 }

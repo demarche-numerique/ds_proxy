@@ -27,13 +27,13 @@ const S3_SIGNATURE_RELATED_KEYS: [&str; 18] = [
     "x-amz-signature",
 ];
 
-pub fn sign_request(req: ClientRequest, s3_config: S3Config) -> ClientRequest {
+pub fn sign_request(req: ClientRequest, s3_config: &S3Config) -> ClientRequest {
     sign_request_with_time(req, s3_config, SystemTime::now())
 }
 
 fn sign_request_with_time(
     mut req: ClientRequest,
-    s3_config: S3Config,
+    s3_config: &S3Config,
     time: SystemTime,
 ) -> ClientRequest {
     let url = Url::parse(&req.get_uri().to_string()).unwrap();
@@ -122,7 +122,7 @@ mod tests {
             .insert_header(("X-Amz-Security-Token", "some_token"))
             .insert_header(("host", "localhost"));
 
-        let signed = sign_request(request, config());
+        let signed = sign_request(request, &config());
 
         assert_eq!(
             signed.get_uri().to_string(),
@@ -143,7 +143,7 @@ mod tests {
             .insert_header(("X-Amz-Security-Token", "some_token"))
             .insert_header(("host", "s3-eu-west-1.amazonaws.com:1234"));
 
-        let signed = sign_request(request, config());
+        let signed = sign_request(request, &config());
 
         assert_eq!(
             signed.get_uri().to_string(),
@@ -168,7 +168,7 @@ mod tests {
         let naive = NaiveDateTime::parse_from_str(date_str, "%Y%m%dT%H%M%SZ").unwrap();
         let time_now: SystemTime = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc).into();
 
-        let signed = sign_request_with_time(request, config(), time_now);
+        let signed = sign_request_with_time(request, &config(), time_now);
 
         assert_eq!(
             signed.headers().get("x-amz-content-sha256").unwrap(),
@@ -195,7 +195,7 @@ mod tests {
         let naive = NaiveDateTime::parse_from_str(date_str, "%Y%m%dT%H%M%SZ").unwrap();
         let time_now: SystemTime = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc).into();
 
-        let signed = sign_request_with_time(request, config(), time_now);
+        let signed = sign_request_with_time(request, &config(), time_now);
 
         assert_eq!(
             signed.headers().get("authorization").unwrap(),
@@ -218,7 +218,7 @@ mod tests {
         let naive = NaiveDateTime::parse_from_str(date_str, "%Y%m%dT%H%M%SZ").unwrap();
         let time_now: SystemTime = DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc).into();
 
-        let signed = sign_request_with_time(request, config(), time_now);
+        let signed = sign_request_with_time(request, &config(), time_now);
 
         assert_eq!(
             signed.headers().get("authorization").unwrap(),

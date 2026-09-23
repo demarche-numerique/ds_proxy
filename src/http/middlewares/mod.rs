@@ -104,7 +104,7 @@ pub async fn verify_s3_signature(
     // treated as S3 when credentials are configured (unchanged behavior).
     let is_s3_request = !config.dual || detect_flavor(service_request.request()) == Flavor::S3;
 
-    if let Some(s3_config) = config.s3_config.clone()
+    if let Some(s3_config) = &config.s3_config
         && is_s3_request
         && !s3_config.bypass_signature_check
     {

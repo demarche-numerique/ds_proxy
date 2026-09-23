@@ -25,7 +25,7 @@ pub async fn simple_proxy(
     // unsigned: signing it would lend the proxy's credentials to a request
     // nobody authenticated (the signature check skips OPTIONS). It still
     // needs the upstream's Host, which sign_request would otherwise have set.
-    let req_to_send = match (flavor, config.s3_config.clone()) {
+    let req_to_send = match (flavor, &config.s3_config) {
         (Flavor::S3, Some(s3_config)) if req.method() != Method::OPTIONS => {
             config.apply_s3_connect_url(sign_request(proxied_req, s3_config))
         }
