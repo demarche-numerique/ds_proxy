@@ -15,10 +15,12 @@ use std::io::IsTerminal;
 fn main() {
     env_logger::init();
 
-    if let Ok(url) = env::var("DS_PROXY_SENTRY_URL") {
+    // The client stays enabled as long as its guard lives: keep it until the
+    // end of main.
+    let _sentry = env::var("DS_PROXY_SENTRY_URL").ok().map(|url| {
         info!("Sentry will be notified on {}", url);
-        let _guard = sentry::init(url);
-    }
+        sentry::init(url)
+    });
 
     libsodium_rs::ensure_init().unwrap();
 
