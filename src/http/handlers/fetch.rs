@@ -1,9 +1,5 @@
 use super::*;
-use crate::http::utils::{
-    flavor::{Flavor, route},
-    partial_extractor::*,
-    s3_helper::sign_request,
-};
+use crate::http::utils::{flavor::route, partial_extractor::*};
 use actix_files::HttpRange;
 use actix_web::http::StatusCode;
 
@@ -13,8 +9,7 @@ pub async fn fetch(
     client: web::Data<Client>,
     config: web::Data<HttpConfig>,
 ) -> Result<HttpResponse, Error> {
-    let (flavor, base) = route(&config, &req);
-    let get_url = config.create_upstream_url(&req, base);
+    let (flavor, get_url) = route(&config, &req);
 
     let mut fetch_req = client
         .request_from(get_url.clone(), req.head())
@@ -29,45 +24,17 @@ pub async fn fetch(
         fetch_req.headers_mut().remove(header);
     }
 
-    let req_to_send = match (flavor, config.s3_config.clone()) {
-        (Flavor::S3, Some(s3_config)) => {
-            config.apply_s3_connect_url(sign_request(fetch_req, s3_config))
-        }
-        _ => fetch_req,
-    };
-
-    let mut res = req_to_send.send_body(body).await.map_err(|e| {
-        error!("fetch error {:?} for {} {}", e, req.method(), req.path());
-        match e {
-            awc::error::SendRequestError::Timeout => actix_web::error::ErrorGatewayTimeout(e),
-            _ => actix_web::error::ErrorBadGateway(e),
-        }
-    })?;
+    let mut res = sign_for_upstream(&config, flavor, fetch_req)
+        .send_body(body)
+        .await
+        .map_err(|e| upstream_error(&req, e))?;
 
     trace!("backend response for GET {:?} : {:?}", get_url, res);
 
     refuse_redirect(&req, res.status())?;
 
-    if res.status().is_client_error() || res.status().is_server_error() {
-        error!(
-            "fetch status error {} for {} {}",
-            res.status(),
-            req.method(),
-            req.path()
-        );
-    }
-
     let upstream_status = res.status();
-
-    let mut client_resp = HttpResponse::build(upstream_status);
-
-    for header in res
-        .headers()
-        .iter()
-        .filter(|(h, _)| !FETCH_RESPONSE_HEADERS_TO_REMOVE.contains(h))
-    {
-        client_resp.append_header(header);
-    }
+    let mut client_resp = client_response(&req, &res, &FETCH_RESPONSE_HEADERS_TO_REMOVE);
 
     let original_length = content_length(res.headers());
 

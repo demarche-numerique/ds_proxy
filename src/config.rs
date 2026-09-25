@@ -4,9 +4,11 @@ use crate::redis_config::RedisConfig;
 use actix_web::HttpRequest;
 use awc::ClientRequest;
 use aws_credential_types::Credentials;
+use std::any::type_name;
 use std::env;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::Duration;
 use url::Url;
 
@@ -121,18 +123,12 @@ impl Config {
                 output_file: args.arg_output_file.clone().unwrap(),
             })
         } else {
-            let local_encryption_directory = match &args.flag_local_encryption_directory {
-                Some(directory) => PathBuf::from(directory),
-                None => match env::var("DS_LOCAL_ENCRYPTION_DIRECTORY") {
-                    Ok(directory) => PathBuf::from(directory),
-                    _ => {
-                        let mut path_buf = PathBuf::new();
-                        path_buf.push(env::temp_dir());
-                        path_buf.push(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY);
-                        path_buf
-                    }
-                },
-            };
+            let local_encryption_directory = from_flag_or_env(
+                &args.flag_local_encryption_directory,
+                "DS_LOCAL_ENCRYPTION_DIRECTORY",
+            )
+            .map(PathBuf::from)
+            .unwrap_or_else(|| env::temp_dir().join(DEFAULT_LOCAL_ENCRYPTION_DIRECTORY));
 
             std::fs::create_dir_all(local_encryption_directory.clone()).unwrap_or_else(|why| {
                 panic!(
@@ -143,11 +139,11 @@ impl Config {
 
             // --upstream-url is the shared default; a flavor-specific flag
             // overrides it for that flavor.
-            let raw_upstream = optional_string_from(&args.flag_upstream_url, "DS_UPSTREAM_URL");
+            let raw_upstream = from_flag_or_env(&args.flag_upstream_url, "DS_UPSTREAM_URL");
             let raw_s3_upstream =
-                optional_string_from(&args.flag_s3_upstream_url, "DS_S3_UPSTREAM_URL");
+                from_flag_or_env(&args.flag_s3_upstream_url, "DS_S3_UPSTREAM_URL");
             let raw_swift_upstream =
-                optional_string_from(&args.flag_swift_upstream_url, "DS_SWIFT_UPSTREAM_URL");
+                from_flag_or_env(&args.flag_swift_upstream_url, "DS_SWIFT_UPSTREAM_URL");
 
             let s3_upstream_base_url = raw_s3_upstream
                 .or_else(|| raw_upstream.clone())
@@ -158,22 +154,21 @@ impl Config {
                 .map(normalize_and_parse_upstream_url);
 
             let s3_connect_base_url =
-                optional_string_from(&args.flag_s3_connect_url, "DS_S3_CONNECT_URL")
+                from_flag_or_env(&args.flag_s3_connect_url, "DS_S3_CONNECT_URL")
                     .map(|raw| Url::parse(&raw).expect("DS_S3_CONNECT_URL is not a valid URL"));
             if let Some(connect) = &s3_connect_base_url {
                 log::info!("s3_connect_base_url: {}", connect);
             }
 
-            let address =
-                optional_string_from(&args.flag_address, "DS_ADDRESS").map(|address| match address
-                    .to_socket_addrs()
-                {
+            let address = from_flag_or_env(&args.flag_address, "DS_ADDRESS").map(|address| {
+                match address.to_socket_addrs() {
                     Ok(mut sockets) => sockets.next().expect("Unable to parse the address"),
                     _ => panic!("Unable to parse the address"),
-                });
+                }
+            });
 
             let socket_path =
-                optional_string_from(&args.flag_socket_path, "DS_SOCKET_PATH").map(PathBuf::from);
+                from_flag_or_env(&args.flag_socket_path, "DS_SOCKET_PATH").map(PathBuf::from);
             if let Some(path) = &socket_path {
                 log::info!("listening on unix socket: {:?}", path);
             }
@@ -184,17 +179,13 @@ impl Config {
                 );
             }
 
-            let backend_connection_timeout = match &args.flag_backend_connection_timeout {
-                Some(timeout_u64) => Duration::from_secs(*timeout_u64),
-                None => match env::var("BACKEND_CONNECTION_TIMEOUT") {
-                    Ok(timeout_string) => Duration::from_secs(
-                        timeout_string
-                            .parse()
-                            .expect("BACKEND_CONNECTION_TIMEOUT is not a u64"),
-                    ),
-                    _ => Duration::from_secs(1),
-                },
-            };
+            let backend_connection_timeout = Duration::from_secs(
+                from_flag_or_env(
+                    &args.flag_backend_connection_timeout,
+                    "BACKEND_CONNECTION_TIMEOUT",
+                )
+                .unwrap_or(1),
+            );
             log::info!(
                 "backend_connection_timeout: {:?}",
                 backend_connection_timeout
@@ -301,28 +292,24 @@ impl Config {
 }
 
 fn bool_from(flag: bool, env_var: &str) -> bool {
-    if flag {
-        true
-    } else {
-        match env::var(env_var) {
-            Ok(var_string) => var_string
-                .parse()
-                .unwrap_or_else(|_| panic!("{} is not a boolean", env_var)),
-            _ => false,
-        }
-    }
+    flag || from_flag_or_env(&None, env_var).unwrap_or(false)
 }
 
-fn optional_string_from(flag: &Option<String>, env_var: &str) -> Option<String> {
-    flag.clone().or_else(|| env::var(env_var).ok())
+// The flag wins over the environment variable. A variable that does not parse
+// stops the start, without printing its value: it may be a secret.
+pub fn from_flag_or_env<T: FromStr + Clone>(flag: &Option<T>, env_var: &str) -> Option<T> {
+    flag.clone().or_else(|| {
+        env::var(env_var).ok().map(|value| {
+            value
+                .parse()
+                .unwrap_or_else(|_| panic!("{} is not a valid {}", env_var, type_name::<T>()))
+        })
+    })
 }
 
 fn string_from(flag: &Option<String>, env_var: &str) -> String {
-    if let Some(value) = flag {
-        value.to_string()
-    } else {
-        env::var(env_var).unwrap_or_else(|_| panic!("Missing {}, use env or cli argument", env_var))
-    }
+    from_flag_or_env(flag, env_var)
+        .unwrap_or_else(|| panic!("Missing {}, use env or cli argument", env_var))
 }
 
 // ensure upstream_url ends with a "/ to avoid
@@ -337,29 +324,29 @@ fn normalize_and_parse_upstream_url(mut url: String) -> Url {
     Url::parse(&url).unwrap()
 }
 
+// Build the upstream URL for a request, given the already-resolved upstream
+// base (see http::utils::flavor::route). The base always ends with '/'.
+pub fn create_upstream_url(req: &HttpRequest, base: &Url) -> String {
+    let raw_path = req.uri().path();
+    // Strip the /upstream/ prefix to get the raw tail, preserving original encoding
+    let tail = raw_path
+        .strip_prefix("/upstream/")
+        .or_else(|| raw_path.strip_prefix("/upstream"))
+        .unwrap_or("");
+
+    let base = base.as_str(); // always ends with '/'
+    let url = if req.query_string().is_empty() {
+        format!("{}{}", base, tail)
+    } else {
+        format!("{}{}?{}", base, tail, req.query_string())
+    };
+
+    log::debug!("Created upstream url: {}", url);
+
+    url
+}
+
 impl HttpConfig {
-    // Build the upstream URL for a request, given the already-resolved upstream
-    // base (see http::utils::flavor::route). The base always ends with '/'.
-    pub fn create_upstream_url(&self, req: &HttpRequest, base: &Url) -> String {
-        let raw_path = req.uri().path();
-        // Strip the /upstream/ prefix to get the raw tail, preserving original encoding
-        let tail = raw_path
-            .strip_prefix("/upstream/")
-            .or_else(|| raw_path.strip_prefix("/upstream"))
-            .unwrap_or("");
-
-        let base = base.as_str(); // always ends with '/'
-        let url = if req.query_string().is_empty() {
-            format!("{}{}", base, tail)
-        } else {
-            format!("{}{}?{}", base, tail, req.query_string())
-        };
-
-        log::debug!("Created upstream url: {}", url);
-
-        url
-    }
-
     // Points an already-signed request at the connect target, if one is
     // configured. Only the dialed scheme/host/port change; the signature and the
     // Host header stay on the upstream.
@@ -586,7 +573,7 @@ mod tests {
     // Builds the upstream url using the config's S3 upstream as the base, the
     // way a routed S3 request would.
     fn upstream_url(config: &HttpConfig, req: &HttpRequest) -> String {
-        config.create_upstream_url(req, config.s3_upstream_base_url.as_ref().unwrap())
+        create_upstream_url(req, config.s3_upstream_base_url.as_ref().unwrap())
     }
 
     fn default_config(upstream_base_url: &str) -> HttpConfig {

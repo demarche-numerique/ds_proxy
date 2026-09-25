@@ -13,7 +13,6 @@ use actix_web::{
     web,
 };
 use chrono::Utc;
-use std::path::Path;
 use url::Url;
 
 pub async fn ensure_write_once(
@@ -104,7 +103,7 @@ pub async fn verify_s3_signature(
     // treated as S3 when credentials are configured (unchanged behavior).
     let is_s3_request = !config.dual || detect_flavor(service_request.request()) == Flavor::S3;
 
-    if let Some(s3_config) = config.s3_config.clone()
+    if let Some(s3_config) = &config.s3_config
         && is_s3_request
         && !s3_config.bypass_signature_check
     {
@@ -135,21 +134,4 @@ pub async fn verify_s3_signature(
     }
 
     next.call(service_request).await
-}
-
-pub fn erase_file(res: Result<ServiceResponse, Error>) -> Result<ServiceResponse, Error> {
-    let response = res.unwrap();
-    let request = response.request();
-
-    let filepath = request
-        .app_data::<web::Data<HttpConfig>>()
-        .unwrap()
-        .local_encryption_path_for(request)
-        .unwrap();
-
-    if Path::new(&filepath).exists() {
-        std::fs::remove_file(filepath).unwrap();
-    }
-
-    Ok(response)
 }

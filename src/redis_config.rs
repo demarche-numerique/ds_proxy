@@ -1,9 +1,9 @@
 use deadpool_redis::{PoolConfig, Timeouts};
-use std::env;
 use std::time::Duration;
 use url::Url;
 
 use super::args;
+use super::config::from_flag_or_env;
 
 #[derive(Debug, Clone)]
 pub struct RedisConfig {
@@ -30,62 +30,31 @@ impl Default for RedisConfig {
 impl RedisConfig {
     pub fn create_redis_config(args: &args::Args) -> RedisConfig {
         let default_config = RedisConfig::default();
+        let default_timeouts = default_config.pool_config.timeouts;
 
         RedisConfig {
-            url: match &args.flag_redis_url {
-                Some(redis_url) => redis_url.clone(),
-                None => match env::var("REDIS_URL") {
-                    Ok(redis_url_string) => Url::parse(&redis_url_string)
-                        .expect("Invalid Redis URL from environment variable"),
-                    _ => default_config.url,
-                },
-            },
+            url: from_flag_or_env(&args.flag_redis_url, "REDIS_URL").unwrap_or(default_config.url),
             pool_config: PoolConfig {
-                max_size: match &args.flag_redis_pool_max_size {
-                    Some(max_size) => *max_size,
-                    None => match env::var("REDIS_POOL_MAX_SIZE") {
-                        Ok(max_size_string) => max_size_string
-                            .parse::<usize>()
-                            .expect("REDIS_POOL_MAX_SIZE is not a valid usize"),
-                        _ => default_config.pool_config.max_size,
-                    },
-                },
-                queue_mode: default_config.pool_config.queue_mode,
+                max_size: from_flag_or_env(&args.flag_redis_pool_max_size, "REDIS_POOL_MAX_SIZE")
+                    .unwrap_or(default_config.pool_config.max_size),
                 timeouts: Timeouts {
-                    wait: match &args.flag_redis_timeout_wait {
-                        Some(timeout) => Some(Duration::from_millis(*timeout)),
-                        None => match env::var("REDIS_TIMEOUT_WAIT") {
-                            Ok(timeout_string) => Some(Duration::from_millis(
-                                timeout_string
-                                    .parse::<u64>()
-                                    .expect("REDIS_TIMEOUT_WAIT is not a valid u64"),
-                            )),
-                            _ => default_config.pool_config.timeouts.wait,
-                        },
-                    },
-                    create: match &args.flag_redis_timeout_create {
-                        Some(timeout) => Some(Duration::from_millis(*timeout)),
-                        None => match env::var("REDIS_TIMEOUT_CREATE") {
-                            Ok(timeout_string) => Some(Duration::from_millis(
-                                timeout_string
-                                    .parse::<u64>()
-                                    .expect("REDIS_TIMEOUT_CREATE is not a valid u64"),
-                            )),
-                            _ => default_config.pool_config.timeouts.create,
-                        },
-                    },
-                    recycle: match &args.flag_redis_timeout_recycle {
-                        Some(timeout) => Some(Duration::from_millis(*timeout)),
-                        None => match env::var("REDIS_TIMEOUT_RECYCLE") {
-                            Ok(timeout_string) => Some(Duration::from_millis(
-                                timeout_string
-                                    .parse::<u64>()
-                                    .expect("REDIS_TIMEOUT_RECYCLE is not a valid u64"),
-                            )),
-                            _ => default_config.pool_config.timeouts.recycle,
-                        },
-                    },
+                    wait: from_flag_or_env(&args.flag_redis_timeout_wait, "REDIS_TIMEOUT_WAIT")
+                        .map(Duration::from_millis)
+                        .or(default_timeouts.wait),
+                    create: from_flag_or_env(
+                        &args.flag_redis_timeout_create,
+                        "REDIS_TIMEOUT_CREATE",
+                    )
+                    .map(Duration::from_millis)
+                    .or(default_timeouts.create),
+                    recycle: from_flag_or_env(
+                        &args.flag_redis_timeout_recycle,
+                        "REDIS_TIMEOUT_RECYCLE",
+                    )
+                    .map(Duration::from_millis)
+                    .or(default_timeouts.recycle),
                 },
+                ..default_config.pool_config
             },
         }
     }

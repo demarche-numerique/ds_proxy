@@ -35,7 +35,7 @@ impl S3Config {
     }
 
     pub fn sign<'a>(
-        self,
+        &self,
         time: SystemTime,
         request: SignableRequest<'a>,
         expires_in: Option<Duration>,
@@ -48,7 +48,7 @@ impl S3Config {
             settings.signature_location = SignatureLocation::QueryParams;
         }
 
-        let identity = self.credentials.into();
+        let identity = self.credentials.clone().into();
         let signing_params = SigningParams::builder()
             .identity(&identity)
             .region(&self.region)
