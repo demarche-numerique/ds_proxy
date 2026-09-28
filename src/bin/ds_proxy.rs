@@ -8,17 +8,10 @@ use ds_proxy::args::{Args, USAGE};
 use ds_proxy::config::{Config, Config::*};
 use ds_proxy::keyring_utils::{add_random_key_to_keyring, init_keyring, rotate_password};
 use ds_proxy::{file, http};
-use log::info;
-use std::env;
 use std::io::IsTerminal;
 
 fn main() {
     env_logger::init();
-
-    if let Ok(url) = env::var("DS_PROXY_SENTRY_URL") {
-        info!("Sentry will be notified on {}", url);
-        let _guard = sentry::init(url);
-    }
 
     libsodium_rs::ensure_init().unwrap();
 
