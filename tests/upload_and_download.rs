@@ -32,7 +32,7 @@ fn upload_and_download() {
 
     assert_eq!(
         node_received_header("x-amz-meta-original-content-length"),
-        Some(format!("\"{}\"", COMPUTER_SVG_BYTES.len().to_string()))
+        Some(format!("\"{}\"", COMPUTER_SVG_BYTES.len()))
     );
     assert!(node_received_header("x-amz-date").is_some());
     assert!(node_received_header("authorization").is_some());
@@ -83,7 +83,7 @@ fn check_s3_signature() {
         ProxyAndNode::start_with_options(None, None, PrintServerLogs::No, None, true);
 
     let put = curl_put(COMPUTER_SVG_PATH, "localhost:4444/upstream/victory");
-    assert_eq!(put.status.success(), true);
+    assert!(put.status.success());
     assert_eq!(
         String::from_utf8_lossy(&put.stdout),
         "Invalid S3 signature".to_string()
