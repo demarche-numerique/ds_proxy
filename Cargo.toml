@@ -21,6 +21,7 @@ toml = "*"
 log = "*"
 env_logger = { version = "*", default-features = false, features = ["auto-color", "humantime"] }
 url = { version = "*", features = ["serde"] }
+percent-encoding = "*"
 base64 = "*"
 tokio = { version = "*", features = ["fs", "io-util"] }
 chrono = { version = "*", default-features = false, features = ["now"] }
