@@ -20,6 +20,22 @@ pub fn curl_get_status(url: &str) -> String {
     std::str::from_utf8(&stdout).unwrap().to_string()
 }
 
+pub fn curl_http2_prior_knowledge_version_and_status(url: &str) -> String {
+    let stdout = Command::new("curl")
+        .arg("--http2-prior-knowledge")
+        .arg(url)
+        .arg("-o")
+        .arg("/dev/null")
+        .arg("-s")
+        .arg("-w")
+        .arg("%{http_version} %{http_code}")
+        .output()
+        .expect("failed to run curl")
+        .stdout;
+
+    std::str::from_utf8(&stdout).unwrap().to_string()
+}
+
 pub fn curl_get_status_with_headers(url: &str, headers: &[&str]) -> String {
     let mut command = Command::new("curl");
     command.arg("-XGET").arg(url);

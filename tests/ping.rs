@@ -31,3 +31,17 @@ fn ping() {
 
     ensure_is_absent(maintenance_file_path);
 }
+
+#[test]
+#[serial(servers)]
+fn cleartext_http2_is_refused() {
+    let _proxy_server = launch_proxy(PrintServerLogs::No, None, None, false);
+    thread::sleep(time::Duration::from_secs(2));
+
+    assert_eq!(curl_get_status("localhost:4444/ping"), "200");
+
+    assert_eq!(
+        curl_http2_prior_knowledge_version_and_status("localhost:4444/ping"),
+        "0 000"
+    );
+}
