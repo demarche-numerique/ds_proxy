@@ -5,7 +5,6 @@ use actix_web::http::StatusCode;
 
 pub async fn fetch(
     req: HttpRequest,
-    body: web::Bytes,
     client: web::Data<Client>,
     config: web::Data<HttpConfig>,
 ) -> Result<HttpResponse, Error> {
@@ -25,7 +24,7 @@ pub async fn fetch(
     }
 
     let mut res = sign_for_upstream(&config, flavor, fetch_req)
-        .send_body(body)
+        .send()
         .await
         .map_err(|e| upstream_error(&req, e))?;
 
