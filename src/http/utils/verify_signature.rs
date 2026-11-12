@@ -1,9 +1,11 @@
 use actix_web::HttpRequest;
+use actix_web::http::Uri;
 use aws_sigv4::http_request::SignableBody;
 use aws_sigv4::http_request::SignableRequest;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::HashMap;
 use std::time::Duration;
+use url::Url;
 
 use crate::http::utils::s3_helper::remove_s3_signature_params;
 use crate::s3_config::S3Config;
@@ -50,10 +52,9 @@ fn is_signature_valid_with_date(
         SignableBody::UnsignedPayload
     };
 
-    let url_without_signature = remove_s3_signature_params(request.full_url());
+    let url_without_signature = remove_s3_signature_params(request_url(request.uri()));
 
     log::debug!("method: {}", request.method());
-    log::debug!("Full URL: {}", request.full_url());
     log::debug!("URL without_signature: {}", url_without_signature);
     log::debug!("Signed params: {:?}", signed_pairs);
     log::debug!("Body for signing: {:?}", body);
@@ -72,6 +73,19 @@ fn is_signature_valid_with_date(
     log::debug!("Provided signature: {}", provided_signature);
 
     expected_signature == provided_signature
+}
+
+/// The request line as the proxy received it, which the rest of the proxy
+/// reads too. Never `HttpRequest::full_url()`: its scheme and host come from
+/// request headers, unchecked. The authority is a placeholder: aws-sigv4
+/// reads it only when it is handed no signed Host header, and no header the
+/// client sent may then stand in for it.
+fn request_url(uri: &Uri) -> Url {
+    let path_and_query = uri
+        .path_and_query()
+        .expect("a request routed under /upstream has a path");
+    Url::parse(&format!("http://ds-proxy{}", path_and_query))
+        .expect("a request target parses under a fixed authority")
 }
 
 fn s3_date_is_valid(
@@ -106,8 +120,7 @@ fn extract_expires_in(all_params: &HashMap<String, String>) -> Option<Duration> 
 }
 
 fn extract_query_and_header_params(request: &HttpRequest) -> HashMap<String, String> {
-    let mut params: HashMap<String, String> = request
-        .full_url()
+    let mut params: HashMap<String, String> = request_url(request.uri())
         .query_pairs()
         .map(|(k, v)| (k.to_lowercase(), v.to_string()))
         .collect();
@@ -249,6 +262,48 @@ mod tests {
         let now = to_utc_datetime("20251113T155445Z");
 
         assert!(is_signature_valid_with_date(&request, &config(), now));
+    }
+
+    // presigned_put sent with another request line: the signature holds on
+    // the request line received, whatever the headers carry. In the Host
+    // case, host is left out of SignedHeaders.
+    #[test]
+    fn headers_do_not_change_the_checked_request() {
+        let signed = "/upstream/drive-media-storage/item/2b5a76ad-4bfb-4f32-9b6d-ebdd999d3711/test.txt?x-amz-algorithm=AWS4-HMAC-SHA256&x-amz-signature=1695606b1548dc5e8819c3a0276951ac12fb3ef58861d3f31d05c8359a06b1ef&x-amz-credential=an_access_key%2F20251113%2Feu-west-1%2Fs3%2Faws4_request&x-amz-date=20251113T155445Z&x-amz-expires=60&x-amz-signedheaders=host%3Bx-amz-acl";
+        let (signed_path, query) = signed.split_once('?').unwrap();
+        let other = format!("/upstream/drive-media-storage/other.txt?{}", query);
+        let carried = format!("localhost:4444{}#", signed);
+        let host_unsigned = |uri: &str| uri.replace("host%3Bx-amz-acl", "x-amz-acl");
+        let now = to_utc_datetime("20251113T155445Z");
+
+        for (uri, name, value) in [
+            (other.clone(), "x-forwarded-host", carried.clone()),
+            (
+                other.clone(),
+                "x-forwarded-proto",
+                format!("http://{}", carried),
+            ),
+            (signed_path.to_string(), "x-forwarded-host", carried),
+            (
+                host_unsigned(&other),
+                "host",
+                format!("localhost:4444{}#", host_unsigned(signed)),
+            ),
+        ] {
+            let request = TestRequest::put()
+                .uri(&uri)
+                .insert_header(("host", "localhost:4444"))
+                .insert_header(("x-amz-acl", "private"))
+                .insert_header((name, value.as_str()))
+                .to_http_request();
+
+            assert!(
+                !is_signature_valid_with_date(&request, &config(), now),
+                "{} on {}",
+                name,
+                uri
+            );
+        }
     }
 
     #[test]

@@ -78,10 +78,10 @@ pub async fn ensure_write_once(
 }
 
 // The lock must hold on the object the request actually addresses. Both the
-// signature check (HttpRequest::full_url) and the upstream URL go through
-// url::Url, which resolves `.` and `..` segments, percent-encoded or not. Key
-// the lock on that same resolved path, so that every spelling of a path
-// shares one lock. Any other path comes out unchanged.
+// signature check and the upstream URL go through url::Url, which resolves
+// `.` and `..` segments, percent-encoded or not. Key the lock on that same
+// resolved path, so that every spelling of a path shares one lock. Any other
+// path comes out unchanged.
 fn normalized_path(uri: &Uri) -> String {
     Url::parse(&format!("http://ds-proxy{}", uri.path()))
         .map(|url| url.path().to_owned())
