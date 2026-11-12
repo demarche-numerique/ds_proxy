@@ -77,7 +77,11 @@ modification qui en affaiblit un doit être discutée avant d'être écrite.
 2. **Une requête S3 sur `/upstream` n'est relayée que si sa signature SigV4
    est valide pour les credentials du proxy.** Une signature valide ne peut
    venir que de l'application, directement ou via une URL qu'elle a
-   présignée. `verify_s3_signature`, `is_signature_valid`.
+   présignée. La signature se vérifie sur la ligne de requête reçue
+   (`req.uri()`), dont le verrou write-once et l'URL amont sont aussi tirés,
+   jamais sur une URL reconstruite à partir d'en-têtes (`Host`, `Forwarded`,
+   `X-Forwarded-*`). `verify_s3_signature`, `is_signature_valid`,
+   `request_url`.
    Tests : `verify_signature.rs` (unitaires), `check_s3_signature`.
 3. **Le proxy ne re-signe que ce que le client a signé.** Tout en-tête
    `x-amz-*` absent de `SignedHeaders` est refusé en 403, comme le fait S3
