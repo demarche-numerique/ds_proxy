@@ -1086,6 +1086,7 @@ dependencies = [
  "log",
  "md-5",
  "openssl",
+ "percent-encoding",
  "proptest",
  "serde",
  "serde_json",

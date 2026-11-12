@@ -13,6 +13,7 @@ use actix_web::{
     web,
 };
 use chrono::Utc;
+use percent_encoding::percent_decode_str;
 use url::Url;
 
 pub async fn ensure_write_once(
@@ -44,7 +45,7 @@ pub async fn ensure_write_once(
     let locked = match write_once_service.lock(&path, lock_duration).await {
         Ok(true) => true,
         Ok(false) => {
-            log::warn!("Access denied: Redis key already exists: {}", path);
+            log::warn!("Access denied: Redis key already exists: {:?}", path);
             return Err(ErrorForbidden("Access denied"));
         }
         // Redis unavailable: the request goes through unguarded. Say so
@@ -52,7 +53,7 @@ pub async fn ensure_write_once(
         // this lasts.
         Err(err) => {
             log::error!(
-                "write-once lock unavailable, letting {} through unguarded: {}",
+                "write-once lock unavailable, letting {:?} through unguarded: {}",
                 path,
                 err
             );
@@ -71,21 +72,24 @@ pub async fn ensure_write_once(
         && !succeeded
         && let Err(err) = write_once_service.unlock(&path).await
     {
-        log::error!("Failed to release write-once lock on {}: {}", path, err);
+        log::error!("Failed to release write-once lock on {:?}: {}", path, err);
     }
 
     result
 }
 
-// The lock must hold on the object the request actually addresses. Both the
-// signature check and the upstream URL go through url::Url, which resolves
-// `.` and `..` segments, percent-encoded or not. Key the lock on that same
-// resolved path, so that every spelling of a path shares one lock. Any other
-// path comes out unchanged.
+// The lock must hold on the object the request actually addresses. Swift
+// decodes the path before it checks a TempURL and before it resolves the
+// object, so every percent-encoded spelling of a name passes the same
+// signature: key the lock on the decoded path, `%2F` included, decoded once.
+// Dot segments are resolved before decoding, by url::Url, where an encoded
+// slash does not separate segments. The key is decoded, so it is logged with
+// `{:?}`: a decoded control character must not reach the log as is.
 fn normalized_path(uri: &Uri) -> String {
-    Url::parse(&format!("http://ds-proxy{}", uri.path()))
+    let path = Url::parse(&format!("http://ds-proxy{}", uri.path()))
         .map(|url| url.path().to_owned())
-        .unwrap_or_else(|_| uri.path().to_owned())
+        .unwrap_or_else(|_| uri.path().to_owned());
+    percent_decode_str(&path).decode_utf8_lossy().into_owned()
 }
 
 pub async fn verify_s3_signature(
@@ -134,4 +138,42 @@ pub async fn verify_s3_signature(
     }
 
     next.call(service_request).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lock_key(path: &str) -> String {
+        normalized_path(&path.parse::<Uri>().unwrap())
+    }
+
+    #[test]
+    fn every_encoded_spelling_of_an_object_shares_one_write_once_lock() {
+        for spelling in [
+            "/upstream/v1/AUTH_project/container/folder/document.pdf",
+            "/upstream/v1/AUTH_project/container/folder/d%6Fcument.pdf",
+            "/upstream/v1/AUTH_project/container/folder/d%6fcument.pdf",
+            "/upstream/v1/AUTH_project/container/folder%2Fdocument.pdf",
+        ] {
+            assert_eq!(
+                lock_key(spelling),
+                "/upstream/v1/AUTH_project/container/folder/document.pdf",
+                "{} has its own lock",
+                spelling
+            );
+        }
+    }
+
+    #[test]
+    fn the_lock_path_is_decoded_once_after_dot_segments() {
+        assert_eq!(
+            lock_key("/upstream/v1/AUTH_project/container/100%2525.pdf"),
+            "/upstream/v1/AUTH_project/container/100%25.pdf"
+        );
+        assert_eq!(
+            lock_key("/upstream/v1/AUTH_project/container/x%2F..%2Fdocument.pdf"),
+            "/upstream/v1/AUTH_project/container/x/../document.pdf"
+        );
+    }
 }
